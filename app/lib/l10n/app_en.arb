@@ -1,0 +1,11 @@
+{
+  "@@locale": "en",
+  "appTitle": "Scenes",
+  "@appTitle": {
+    "description": "The application name shown in the home app bar."
+  },
+  "homeGreeting": "Supabase ready.",
+  "@homeGreeting": {
+    "description": "Initial greeting shown on the home screen."
+  }
+}

@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 디자인 토큰 — 한 곳에서만 정의한다. 컴포넌트에서는 토큰 utility만 사용. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+
+  --color-brand: oklch(0.55 0.18 295);
+  --color-background: var(--color-background-current);
+  --color-surface: var(--color-surface-current);
+  --color-foreground: var(--color-foreground-current);
+  --color-muted: var(--color-muted-current);
+}
+
+/* Light / Dark 팔레트. `.dark` class 또는 `prefers-color-scheme`으로 전환. */
+:root {
+  --color-background-light: oklch(0.99 0.005 295);
+  --color-surface-light: oklch(1 0 0);
+  --color-foreground-light: oklch(0.2 0.02 295);
+  --color-muted-light: oklch(0.55 0.02 295);
+
+  --color-background-dark: oklch(0.16 0.015 295);
+  --color-surface-dark: oklch(0.21 0.02 295);
+  --color-foreground-dark: oklch(0.95 0.01 295);
+  --color-muted-dark: oklch(0.7 0.02 295);
+
+  --color-background-current: var(--color-background-light);
+  --color-surface-current: var(--color-surface-light);
+  --color-foreground-current: var(--color-foreground-light);
+  --color-muted-current: var(--color-muted-light);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background-current: var(--color-background-dark);
+    --color-surface-current: var(--color-surface-dark);
+    --color-foreground-current: var(--color-foreground-dark);
+    --color-muted-current: var(--color-muted-dark);
+    color-scheme: dark;
+  }
+}
+
+.dark {
+  --color-background-current: var(--color-background-dark);
+  --color-surface-current: var(--color-surface-dark);
+  --color-foreground-current: var(--color-foreground-dark);
+  --color-muted-current: var(--color-muted-dark);
+  color-scheme: dark;
+}
+
+html,
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+}

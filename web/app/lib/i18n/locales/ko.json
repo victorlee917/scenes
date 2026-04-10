@@ -1,0 +1,9 @@
+{
+  "app": {
+    "title": "Scenes",
+    "description": "Scenes"
+  },
+  "home": {
+    "greeting": "Supabase 준비 완료."
+  }
+}
