@@ -3,52 +3,58 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_typography.dart';
 
-/// 앱 테마 팩토리. `MaterialApp.theme` / `darkTheme`에 주입한다.
+/// 앱 테마. 현재 앱은 "중립 다크" 단일 테마로 운영한다.
+/// 라이트 변형은 화면이 더 나온 다음 결정.
 class AppTheme {
   AppTheme._();
 
-  static ThemeData get light => _base(
-        brightness: Brightness.light,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.brand,
-          brightness: Brightness.light,
-          surface: AppColors.lightSurface,
-          onSurface: AppColors.lightOnSurface,
-        ),
-        scaffoldBackground: AppColors.lightBackground,
-      );
+  static ThemeData get dark {
+    const colorScheme = ColorScheme(
+      brightness: Brightness.dark,
+      primary: AppColors.foreground,
+      onPrimary: AppColors.background,
+      secondary: AppColors.foreground,
+      onSecondary: AppColors.background,
+      error: Color(0xFFE06C75),
+      onError: AppColors.foreground,
+      surface: AppColors.background,
+      onSurface: AppColors.foreground,
+      surfaceContainerHighest: AppColors.surfaceElevated,
+      outline: AppColors.hairline,
+    );
 
-  static ThemeData get dark => _base(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.brand,
-          brightness: Brightness.dark,
-          surface: AppColors.darkSurface,
-          onSurface: AppColors.darkOnSurface,
-        ),
-        scaffoldBackground: AppColors.darkBackground,
-      );
-
-  static ThemeData _base({
-    required Brightness brightness,
-    required ColorScheme colorScheme,
-    required Color scaffoldBackground,
-  }) {
     return ThemeData(
-      brightness: brightness,
+      brightness: Brightness.dark,
       colorScheme: colorScheme,
-      scaffoldBackgroundColor: scaffoldBackground,
-      textTheme: AppTypography.textTheme.apply(
-        bodyColor: colorScheme.onSurface,
-        displayColor: colorScheme.onSurface,
+      scaffoldBackgroundColor: AppColors.background,
+      useMaterial3: true,
+      textTheme: TextTheme(
+        displayLarge: AppTypography.display(48),
+        displayMedium: AppTypography.display(36),
+        displaySmall: AppTypography.display(28),
+        headlineLarge: AppTypography.display(28),
+        headlineMedium: AppTypography.display(24),
+        titleLarge: AppTypography.display(22),
+        titleMedium: AppTypography.body(16, weight: FontWeight.w500),
+        titleSmall: AppTypography.body(14, weight: FontWeight.w500),
+        bodyLarge: AppTypography.body(16),
+        bodyMedium: AppTypography.body(14),
+        bodySmall: AppTypography.body(12),
+        labelLarge: AppTypography.body(13, italic: FontStyle.italic),
+        labelMedium: AppTypography.body(12, italic: FontStyle.italic),
+        labelSmall: AppTypography.body(11, italic: FontStyle.italic),
+      ).apply(
+        bodyColor: AppColors.foreground,
+        displayColor: AppColors.foreground,
       ),
-      appBarTheme: AppBarTheme(
-        backgroundColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
+      appBarTheme: const AppBarTheme(
+        backgroundColor: AppColors.background,
+        foregroundColor: AppColors.foreground,
         elevation: 0,
         centerTitle: false,
       ),
-      useMaterial3: true,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
     );
   }
 }

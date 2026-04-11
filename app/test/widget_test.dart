@@ -1,17 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:scenes/core/theme/app_theme.dart';
 import 'package:scenes/features/home/home_view.dart';
 import 'package:scenes/l10n/app_localizations.dart';
 
 void main() {
-  testWidgets('HomeView renders localized greeting', (tester) async {
+  setUpAll(() {
+    // Avoid network fetches for fonts during tests.
+    GoogleFonts.config.allowRuntimeFetching = false;
+  });
+
+  testWidgets('HomeView renders couple strip and first scene card',
+      (tester) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(
-          theme: AppTheme.light,
+          theme: AppTheme.dark,
           darkTheme: AppTheme.dark,
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
@@ -20,9 +27,11 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    // Network images are stubbed to errorBuilder; avoid pumpAndSettle.
+    await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.text('Scenes'), findsOneWidget);
-    expect(find.text('Supabase ready.'), findsOneWidget);
+    expect(find.textContaining('since'), findsOneWidget);
+    expect(find.textContaining('d+'), findsOneWidget);
+    expect(find.text('저 우산 아래서'), findsOneWidget);
   });
 }

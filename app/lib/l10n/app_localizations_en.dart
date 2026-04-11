@@ -12,5 +12,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get appTitle => 'Scenes';
 
   @override
-  String get homeGreeting => 'Supabase ready.';
+  String coupleSince(String date) {
+    return 'since $date';
+  }
+
+  @override
+  String coupleDDay(int days) {
+    return 'd+$days';
+  }
+
+  @override
+  String get sceneListA11yLabel => 'Scenes';
+
+  @override
+  String get transportSort => 'Sort scenes';
+
+  @override
+  String get transportAdd => 'Add scene';
+
+  @override
+  String get transportPlay => 'Play scenes';
+
+  @override
+  String get addSceneCardLabel => 'add new scene';
 }

@@ -12,5 +12,27 @@ class AppLocalizationsKo extends AppLocalizations {
   String get appTitle => 'Scenes';
 
   @override
-  String get homeGreeting => 'Supabase 준비 완료.';
+  String coupleSince(String date) {
+    return 'since $date';
+  }
+
+  @override
+  String coupleDDay(int days) {
+    return 'd+$days';
+  }
+
+  @override
+  String get sceneListA11yLabel => '씬 목록';
+
+  @override
+  String get transportSort => '씬 정렬';
+
+  @override
+  String get transportAdd => '씬 추가';
+
+  @override
+  String get transportPlay => '씬 재생';
+
+  @override
+  String get addSceneCardLabel => '새 Scene 추가';
 }

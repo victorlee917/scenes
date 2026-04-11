@@ -98,17 +98,53 @@ abstract class AppLocalizations {
     Locale('ko'),
   ];
 
-  /// The application name shown in the home app bar.
+  /// The application name.
   ///
   /// In en, this message translates to:
   /// **'Scenes'**
   String get appTitle;
 
-  /// Initial greeting shown on the home screen.
+  /// Couple start date label shown in the home top strip.
   ///
   /// In en, this message translates to:
-  /// **'Supabase ready.'**
-  String get homeGreeting;
+  /// **'since {date}'**
+  String coupleSince(String date);
+
+  /// Days-since counter in the home top strip.
+  ///
+  /// In en, this message translates to:
+  /// **'d+{days}'**
+  String coupleDDay(int days);
+
+  /// Accessibility label for the vertical Scene pager.
+  ///
+  /// In en, this message translates to:
+  /// **'Scenes'**
+  String get sceneListA11yLabel;
+
+  /// A11y label for the left transport button (go to sort/list screen).
+  ///
+  /// In en, this message translates to:
+  /// **'Sort scenes'**
+  String get transportSort;
+
+  /// A11y label for the center transport button (add new scene).
+  ///
+  /// In en, this message translates to:
+  /// **'Add scene'**
+  String get transportAdd;
+
+  /// A11y label for the right transport button (rewind/play back past scenes).
+  ///
+  /// In en, this message translates to:
+  /// **'Play scenes'**
+  String get transportPlay;
+
+  /// Label shown in the AddSceneCard (appended at the end of the home carousel, and shown alone when no scenes exist yet).
+  ///
+  /// In en, this message translates to:
+  /// **'add new scene'**
+  String get addSceneCardLabel;
 }
 
 class _AppLocalizationsDelegate

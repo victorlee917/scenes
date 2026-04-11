@@ -1,5 +1,11 @@
 {
   "@@locale": "ko",
   "appTitle": "Scenes",
-  "homeGreeting": "Supabase 준비 완료."
+  "coupleSince": "since {date}",
+  "coupleDDay": "d+{days}",
+  "sceneListA11yLabel": "씬 목록",
+  "transportSort": "씬 정렬",
+  "transportAdd": "씬 추가",
+  "transportPlay": "씬 재생",
+  "addSceneCardLabel": "새 Scene 추가"
 }

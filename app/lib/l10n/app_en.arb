@@ -2,10 +2,46 @@
   "@@locale": "en",
   "appTitle": "Scenes",
   "@appTitle": {
-    "description": "The application name shown in the home app bar."
+    "description": "The application name."
   },
-  "homeGreeting": "Supabase ready.",
-  "@homeGreeting": {
-    "description": "Initial greeting shown on the home screen."
+  "coupleSince": "since {date}",
+  "@coupleSince": {
+    "description": "Couple start date label shown in the home top strip.",
+    "placeholders": {
+      "date": {
+        "type": "String",
+        "example": "2025.04.03"
+      }
+    }
+  },
+  "coupleDDay": "d+{days}",
+  "@coupleDDay": {
+    "description": "Days-since counter in the home top strip.",
+    "placeholders": {
+      "days": {
+        "type": "int",
+        "example": "373"
+      }
+    }
+  },
+  "sceneListA11yLabel": "Scenes",
+  "@sceneListA11yLabel": {
+    "description": "Accessibility label for the vertical Scene pager."
+  },
+  "transportSort": "Sort scenes",
+  "@transportSort": {
+    "description": "A11y label for the left transport button (go to sort/list screen)."
+  },
+  "transportAdd": "Add scene",
+  "@transportAdd": {
+    "description": "A11y label for the center transport button (add new scene)."
+  },
+  "transportPlay": "Play scenes",
+  "@transportPlay": {
+    "description": "A11y label for the right transport button (rewind/play back past scenes)."
+  },
+  "addSceneCardLabel": "add new scene",
+  "@addSceneCardLabel": {
+    "description": "Label shown in the AddSceneCard (appended at the end of the home carousel, and shown alone when no scenes exist yet)."
   }
 }
