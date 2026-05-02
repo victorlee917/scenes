@@ -4,7 +4,7 @@
   "@appTitle": {
     "description": "The application name."
   },
-  "coupleSince": "since {date}",
+  "coupleSince": "Since {date}",
   "@coupleSince": {
     "description": "Couple start date label shown in the home top strip.",
     "placeholders": {
@@ -43,5 +43,100 @@
   "addSceneCardLabel": "add new scene",
   "@addSceneCardLabel": {
     "description": "Label shown in the AddSceneCard (appended at the end of the home carousel, and shown alone when no scenes exist yet)."
+  },
+  "detailBack": "Back",
+  "@detailBack": {
+    "description": "A11y label for the back/close affordance in the scene detail app bar."
+  },
+  "detailMoreActions": "Scene actions",
+  "@detailMoreActions": {
+    "description": "A11y label for the ellipsis button in the scene detail app bar (opens edit/delete menu)."
+  },
+  "sceneListEditOrder": "Edit order",
+  "@sceneListEditOrder": {
+    "description": "Action label to enter reorder mode for scenes."
+  },
+  "sceneListNewestFirst": "Newest first",
+  "@sceneListNewestFirst": {
+    "description": "Action label to sort scenes newest-first."
+  },
+  "sceneListOldestFirst": "Oldest first",
+  "@sceneListOldestFirst": {
+    "description": "Action label to sort scenes oldest-first."
+  },
+  "sceneListSave": "Save",
+  "@sceneListSave": {
+    "description": "Save button label in scene list reorder mode."
+  },
+  "sceneDetailEdit": "Edit",
+  "@sceneDetailEdit": {
+    "description": "Action label to edit a scene in the detail action sheet."
+  },
+  "sceneDetailDelete": "Delete",
+  "@sceneDetailDelete": {
+    "description": "Action label to delete a scene in the detail action sheet."
+  },
+  "sceneDetailShare": "Share scene",
+  "@sceneDetailShare": {
+    "description": "A11y label for the share action button in the scene detail."
+  },
+  "sceneDetailAddMedia": "Add to scene",
+  "@sceneDetailAddMedia": {
+    "description": "A11y label for the add-media action button in the scene detail."
+  },
+  "profileSettings": "Settings",
+  "@profileSettings": {
+    "description": "A11y label for the settings button in the profile app bar."
+  },
+  "settingsTitle": "Settings",
+  "@settingsTitle": {
+    "description": "Settings screen app bar title."
+  },
+  "settingsSectionPreferences": "Preferences",
+  "@settingsSectionPreferences": {
+    "description": "Section header for user preference items."
+  },
+  "settingsSectionAbout": "About",
+  "@settingsSectionAbout": {
+    "description": "Section header for about/legal/links."
+  },
+  "settingsSectionAccount": "Account",
+  "@settingsSectionAccount": {
+    "description": "Section header for account actions."
+  },
+  "settingsTheme": "Theme",
+  "settingsPushNotifications": "Notifications",
+  "settingsPrivacyPolicy": "Privacy policy",
+  "settingsTermsOfService": "Terms of service",
+  "settingsInstagram": "Scenes on Instagram",
+  "settingsLogout": "Log out",
+  "settingsDisconnect": "Disconnect",
+  "@settingsDisconnect": {
+    "description": "Action label to disconnect from partner."
+  },
+  "settingsDeleteAccount": "Delete account",
+  "sceneDetailPlay": "Play scene",
+  "@sceneDetailPlay": {
+    "description": "A11y label for the play action button in the scene detail."
+  },
+  "profileNarrative": "Since {date}, we have captured {count} Scenes together.",
+  "@profileNarrative": {
+    "description": "Narrative sentence displayed on the profile screen.",
+    "placeholders": {
+      "partnerA": { "type": "String" },
+      "partnerB": { "type": "String" },
+      "date": { "type": "String" },
+      "count": { "type": "int" }
+    }
+  },
+  "coupleScenesCount": "{count} Scenes",
+  "@coupleScenesCount": {
+    "description": "Total scene count label shown on the left of the home top strip.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "14"
+      }
+    }
   }
 }

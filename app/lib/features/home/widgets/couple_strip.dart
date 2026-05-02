@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../../core/theme/app_colors.dart';
-import '../../../core/theme/app_typography.dart';
-import '../../../l10n/app_localizations.dart';
+import '../../../core/theme/app_colors_ext.dart';
 import '../home_view_model.dart';
+import 'profile_screen.dart';
 
 /// 홈 상단 — 두 아바타 + since/D-Day 메타. 영역 전체가 tap target.
 ///
@@ -18,66 +17,46 @@ class CoupleStrip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final couple = ref.watch(homeViewModelProvider.select((s) => s.couple));
-    final l10n = AppLocalizations.of(context);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final avatarSize = screenWidth >= 420 ? 38.0 : 32.0;
     final overlap = avatarSize * 0.35;
 
-    final sinceDate = DateFormat('yyyy.MM.dd').format(couple.sinceDate);
-    final sinceText = l10n.coupleSince(sinceDate);
-    final dDayText = l10n.coupleDDay(couple.dDayFrom(DateTime.now()));
-
-    return InkWell(
-      onTap: onTap,
-      splashColor: Colors.transparent,
-      highlightColor: AppColors.hairline,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
-        child: Row(
-          children: [
-            SizedBox(
-              width: avatarSize + (avatarSize - overlap),
-              height: avatarSize,
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 0,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 12),
+      child: Center(
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            width: avatarSize + (avatarSize - overlap),
+            height: avatarSize,
+            child: Stack(
+              children: [
+                Positioned(
+                  left: 0,
+                  child: Hero(
+                    tag: ProfileScreen.partnerAHeroTag,
+                    createRectTween: ProfileScreen.straightRectTween,
                     child: _Avatar(
                       url: couple.partnerAImageUrl,
                       size: avatarSize,
                     ),
                   ),
-                  Positioned(
-                    left: avatarSize - overlap,
+                ),
+                Positioned(
+                  left: avatarSize - overlap,
+                  child: Hero(
+                    tag: ProfileScreen.partnerBHeroTag,
+                    createRectTween: ProfileScreen.straightRectTween,
                     child: _Avatar(
                       url: couple.partnerBImageUrl,
                       size: avatarSize,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    sinceText,
-                    style: AppTypography.body(12, italic: FontStyle.italic)
-                        .copyWith(color: AppColors.foregroundMuted),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    dDayText,
-                    style: AppTypography.body(12, italic: FontStyle.italic)
-                        .copyWith(color: AppColors.foregroundMuted),
-                  ),
-                ],
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -97,8 +76,8 @@ class _Avatar extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.surface,
-        border: Border.all(color: AppColors.background, width: 2),
+        color: context.colors.nonClickableArea,
+        border: Border.all(color: context.colors.background, width: 2),
       ),
       child: ClipOval(
         child: Image.network(
@@ -107,10 +86,10 @@ class _Avatar extends StatelessWidget {
           height: size,
           fit: BoxFit.cover,
           errorBuilder: (_, _, _) =>
-              const ColoredBox(color: AppColors.surface),
+              ColoredBox(color: context.colors.nonClickableArea),
           loadingBuilder: (context, child, progress) => progress == null
               ? child
-              : const ColoredBox(color: AppColors.surface),
+              : ColoredBox(color: context.colors.nonClickableArea),
         ),
       ),
     );

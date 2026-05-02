@@ -30,8 +30,6 @@ void main() {
     // Network images are stubbed to errorBuilder; avoid pumpAndSettle.
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(find.textContaining('since'), findsOneWidget);
-    expect(find.textContaining('d+'), findsOneWidget);
-    expect(find.text('저 우산 아래서'), findsOneWidget);
+    expect(find.text('Under the Umbrella'), findsWidgets);
   });
 }

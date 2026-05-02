@@ -107,7 +107,7 @@ abstract class AppLocalizations {
   /// Couple start date label shown in the home top strip.
   ///
   /// In en, this message translates to:
-  /// **'since {date}'**
+  /// **'Since {date}'**
   String coupleSince(String date);
 
   /// Days-since counter in the home top strip.
@@ -145,6 +145,167 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'add new scene'**
   String get addSceneCardLabel;
+
+  /// A11y label for the back/close affordance in the scene detail app bar.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get detailBack;
+
+  /// A11y label for the ellipsis button in the scene detail app bar (opens edit/delete menu).
+  ///
+  /// In en, this message translates to:
+  /// **'Scene actions'**
+  String get detailMoreActions;
+
+  /// Action label to enter reorder mode for scenes.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit order'**
+  String get sceneListEditOrder;
+
+  /// Action label to sort scenes newest-first.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest first'**
+  String get sceneListNewestFirst;
+
+  /// Action label to sort scenes oldest-first.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest first'**
+  String get sceneListOldestFirst;
+
+  /// Save button label in scene list reorder mode.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get sceneListSave;
+
+  /// Action label to edit a scene in the detail action sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get sceneDetailEdit;
+
+  /// Action label to delete a scene in the detail action sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get sceneDetailDelete;
+
+  /// A11y label for the share action button in the scene detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Share scene'**
+  String get sceneDetailShare;
+
+  /// A11y label for the add-media action button in the scene detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to scene'**
+  String get sceneDetailAddMedia;
+
+  /// A11y label for the settings button in the profile app bar.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get profileSettings;
+
+  /// Settings screen app bar title.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get settingsTitle;
+
+  /// Section header for user preference items.
+  ///
+  /// In en, this message translates to:
+  /// **'Preferences'**
+  String get settingsSectionPreferences;
+
+  /// Section header for about/legal/links.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get settingsSectionAbout;
+
+  /// Section header for account actions.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get settingsSectionAccount;
+
+  /// No description provided for @settingsTheme.
+  ///
+  /// In en, this message translates to:
+  /// **'Theme'**
+  String get settingsTheme;
+
+  /// No description provided for @settingsPushNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get settingsPushNotifications;
+
+  /// No description provided for @settingsPrivacyPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy policy'**
+  String get settingsPrivacyPolicy;
+
+  /// No description provided for @settingsTermsOfService.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of service'**
+  String get settingsTermsOfService;
+
+  /// No description provided for @settingsInstagram.
+  ///
+  /// In en, this message translates to:
+  /// **'Scenes on Instagram'**
+  String get settingsInstagram;
+
+  /// No description provided for @settingsLogout.
+  ///
+  /// In en, this message translates to:
+  /// **'Log out'**
+  String get settingsLogout;
+
+  /// Action label to disconnect from partner.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get settingsDisconnect;
+
+  /// No description provided for @settingsDeleteAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete account'**
+  String get settingsDeleteAccount;
+
+  /// A11y label for the play action button in the scene detail.
+  ///
+  /// In en, this message translates to:
+  /// **'Play scene'**
+  String get sceneDetailPlay;
+
+  /// Narrative sentence displayed on the profile screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Since {date}, we have captured {count} Scenes together.'**
+  String profileNarrative(
+    String partnerA,
+    String partnerB,
+    String date,
+    int count,
+  );
+
+  /// Total scene count label shown on the left of the home top strip.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} Scenes'**
+  String coupleScenesCount(int count);
 }
 
 class _AppLocalizationsDelegate
