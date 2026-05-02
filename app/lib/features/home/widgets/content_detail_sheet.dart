@@ -24,6 +24,10 @@ class ContentViewer extends StatefulWidget {
     this.partnerNames = const [],
     this.mediaType = 'photo',
     this.uploadedAt,
+    this.capturedAt,
+    this.capturedLocation,
+    this.photoWidth,
+    this.photoHeight,
   });
 
   final int totalCount;
@@ -35,6 +39,18 @@ class ContentViewer extends StatefulWidget {
   final String mediaType;
   final DateTime? uploadedAt;
 
+  /// Photo-only: when the photo was actually taken (EXIF DateTimeOriginal).
+  /// Distinct from [uploadedAt], which is when the row was created.
+  final DateTime? capturedAt;
+
+  /// Photo-only: human-readable place where the photo was taken (reverse-
+  /// geocoded EXIF GPS, or user-edited).
+  final String? capturedLocation;
+
+  /// Photo-only: pixel dimensions, both required to render "W × H".
+  final int? photoWidth;
+  final int? photoHeight;
+
   static Future<void> show({
     required BuildContext context,
     required int totalCount,
@@ -45,6 +61,10 @@ class ContentViewer extends StatefulWidget {
     List<String> partnerNames = const [],
     String mediaType = 'photo',
     DateTime? uploadedAt,
+    DateTime? capturedAt,
+    String? capturedLocation,
+    int? photoWidth,
+    int? photoHeight,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -61,6 +81,10 @@ class ContentViewer extends StatefulWidget {
           partnerNames: partnerNames,
           mediaType: mediaType,
           uploadedAt: uploadedAt,
+          capturedAt: capturedAt,
+          capturedLocation: capturedLocation,
+          photoWidth: photoWidth,
+          photoHeight: photoHeight,
         ),
         transitionsBuilder:
             (context, animation, secondaryAnimation, child) {
@@ -444,49 +468,77 @@ class _ContentViewerState extends State<ContentViewer> {
                                 horizontal: 40,
                                 vertical: 40,
                               ),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    'scene #${_currentIndex + 1}',
-                                    style: AppTypography.body(12).copyWith(
-                                      color: Colors.white
-                                          .withValues(alpha: 0.5),
-                                      letterSpacing: 1.5,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    widget.sceneName ?? '',
-                                    textAlign: TextAlign.center,
-                                    style: AppTypography.display(
-                                      28,
-                                      text: widget.sceneName,
-                                    ).copyWith(
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 48),
-                                  _CreditEntry(
-                                    label: _mediaVerb(widget.mediaType),
-                                    value: widget.uploaderName ?? '',
-                                  ),
-                                  if (widget.uploadedAt != null) ...[
-                                    const SizedBox(height: 32),
-                                    _CreditEntry(
-                                      label: 'on',
-                                      value: DateFormat.yMMMMd('en')
-                                          .format(widget.uploadedAt!),
-                                    ),
-                                  ],
-                                  if (_likedBy.isNotEmpty) ...[
-                                    const SizedBox(height: 32),
-                                    _CreditEntry(
+                              child: Builder(
+                                builder: (_) {
+                                  final entries = <Widget>[];
+                                  if (widget.mediaType == 'photo') {
+                                    if (widget.capturedAt != null) {
+                                      entries.add(_CreditEntry(
+                                        label: 'captured',
+                                        value: DateFormat.yMMMd('en')
+                                            .add_jm()
+                                            .format(widget.capturedAt!),
+                                      ));
+                                    }
+                                    if (widget.capturedLocation != null &&
+                                        widget.capturedLocation!.isNotEmpty) {
+                                      entries.add(_CreditEntry(
+                                        label: 'at',
+                                        value: widget.capturedLocation!,
+                                      ));
+                                    }
+                                    if (widget.photoWidth != null &&
+                                        widget.photoHeight != null) {
+                                      entries.add(_CreditEntry(
+                                        label: 'size',
+                                        value:
+                                            '${widget.photoWidth} × ${widget.photoHeight}',
+                                      ));
+                                    }
+                                  }
+                                  if (_likedBy.isNotEmpty) {
+                                    entries.add(_CreditEntry(
                                       label: 'loved by',
                                       value: _likedBy.join(' · '),
-                                    ),
-                                  ],
-                                ],
+                                    ));
+                                  }
+
+                                  return Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'scene #${_currentIndex + 1}',
+                                        style:
+                                            AppTypography.body(12).copyWith(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.5),
+                                          letterSpacing: 1.5,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        widget.sceneName ?? '',
+                                        textAlign: TextAlign.center,
+                                        style: AppTypography.display(
+                                          28,
+                                          text: widget.sceneName,
+                                        ).copyWith(
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      if (entries.isNotEmpty) ...[
+                                        const SizedBox(height: 48),
+                                        for (var i = 0;
+                                            i < entries.length;
+                                            i++) ...[
+                                          if (i > 0)
+                                            const SizedBox(height: 32),
+                                          entries[i],
+                                        ],
+                                      ],
+                                    ],
+                                  );
+                                },
                               ),
                             ),
                           ),
@@ -566,21 +618,6 @@ class _PhotoContentPage extends StatelessWidget {
               ),
       ),
     );
-  }
-}
-
-String _mediaVerb(String mediaType) {
-  switch (mediaType) {
-    case 'photo':
-      return 'took by';
-    case 'film':
-      return 'watched by';
-    case 'music':
-      return 'listened to by';
-    case 'place':
-      return 'visited by';
-    default:
-      return 'added by';
   }
 }
 

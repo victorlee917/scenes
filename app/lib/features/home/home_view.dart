@@ -197,11 +197,33 @@ class _HomeViewState extends ConsumerState<HomeView> {
       // backgroundColor handled by theme
       body: Stack(
         children: [
-          // Layer 1 — 가로 원호 캐러셀.
+          // ── Refreshable 영역: 캐니스터 캐러셀 + 메타 정보만 ─────
+          // CoupleStrip / ArcDial / TransportControls / shadow는 outer
+          // Stack에 직접 배치되므로 pull-to-refresh 시 같이 따라 내려가지
+          // 않고 고정된 위치를 유지한다.
           Positioned.fill(
-            child: NotificationListener<ScrollNotification>(
-              onNotification: _onScrollNotification,
-              child: Semantics(
+            child: RefreshIndicator(
+              onRefresh: _handleRefresh,
+              // edgeOffset이 indicator의 출발 지점을 CoupleStrip 아래로
+              // 내리고, displacement는 default(40)로 둬 트리거 거리를 짧게.
+              edgeOffset: 80,
+              displacement: 40,
+              // Material 기본 elevation(2.0)이 진한 drop shadow를 만들어
+              // 테마 톤과 부딪힘. 0으로 두고 배경색은 테마 토큰 사용.
+              elevation: 0,
+              backgroundColor: context.colors.nonClickableArea,
+              color: context.colors.foreground,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: NotificationListener<ScrollNotification>(
+                            onNotification: _onScrollNotification,
+                            child: Semantics(
                 label: l10n.sceneListA11yLabel,
                 child: PageView.builder(
                   controller: _pageController,
@@ -285,6 +307,49 @@ class _HomeViewState extends ConsumerState<HomeView> {
             ),
           ),
 
+                        // Layer 5 — 포커스된 Scene의 메타 텍스트. Hero source.
+                        if (!isEmpty)
+                          Positioned(
+                            bottom: padding.bottom + 256,
+                            left: 0,
+                            right: 0,
+                            child: IgnorePointer(
+                              ignoring: _isScrolling,
+                              child: AnimatedOpacity(
+                                opacity: _isScrolling ? 0 : 1,
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onTap: () {
+                                    if (displayedScene != null) {
+                                      _handleSceneTap(displayedScene.id);
+                                    }
+                                  },
+                                  child: displayedScene == null
+                                      ? const SizedBox.shrink()
+                                      : Hero(
+                                          tag: SceneDetailScreen.infoHeroTag(
+                                            displayedScene.id,
+                                          ),
+                                          child: Material(
+                                            type: MaterialType.transparency,
+                                            child: FocusedSceneInfo(
+                                                scene: displayedScene),
+                                          ),
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // Layer 2 — 상단 shadow
           Positioned(
             top: 0,
@@ -351,41 +416,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
             ),
           ),
 
-          // Layer 5 — 포커스된 Scene의 메타 텍스트. Hero source.
-          if (!isEmpty)
-            Positioned(
-              bottom: padding.bottom + 256,
-              left: 0,
-              right: 0,
-              child: IgnorePointer(
-                ignoring: _isScrolling,
-                child: AnimatedOpacity(
-                  opacity: _isScrolling ? 0 : 1,
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeOut,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (displayedScene != null) {
-                        _handleSceneTap(displayedScene.id);
-                      }
-                    },
-                    child: displayedScene == null
-                        ? const SizedBox.shrink()
-                        : Hero(
-                            tag: SceneDetailScreen.infoHeroTag(
-                              displayedScene.id,
-                            ),
-                            child: Material(
-                              type: MaterialType.transparency,
-                              child: FocusedSceneInfo(scene: displayedScene),
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-            ),
-
           // Layer 6 — Arc dial.
           if (!isEmpty)
             Positioned(
@@ -413,6 +443,12 @@ class _HomeViewState extends ConsumerState<HomeView> {
         ],
       ),
     );
+  }
+
+  Future<void> _handleRefresh() async {
+    // TODO: 실제 데이터 새로고침. home view model에 refresh 액션이 생기면
+    // ref.read(homeViewModelProvider.notifier).refresh()로 교체.
+    await Future<void>.delayed(const Duration(milliseconds: 800));
   }
 }
 

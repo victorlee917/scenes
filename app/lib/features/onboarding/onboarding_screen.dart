@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -20,6 +22,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     with SingleTickerProviderStateMixin {
   final ScrollController _scrollController = ScrollController();
   bool _autoScrolling = true;
+
+  /// 사용자 스크롤 종료 후 자동 재개를 위해 예약해둔 타이머. 새 사용자
+  /// 인터랙션이 들어오면 cancel해서 timer가 stack되지 않도록 한다.
+  Timer? _resumeTimer;
 
   static const _creditLines = [
     'A story about us',
@@ -46,9 +52,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onUserScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future<void>.delayed(const Duration(seconds: 1), () {
+      _resumeTimer = Timer(const Duration(seconds: 1), () {
         if (mounted) _startAutoScroll();
       });
     });
@@ -56,19 +61,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   @override
   void dispose() {
-    _scrollController.removeListener(_onUserScroll);
+    _resumeTimer?.cancel();
     _scrollController.dispose();
     super.dispose();
-  }
-
-  void _onUserScroll() {
-    if (!_autoScrolling) return;
   }
 
   void _startAutoScroll() {
     if (!_scrollController.hasClients) return;
     final target = _scrollController.position.maxScrollExtent;
     final distance = target - _scrollController.offset;
+    // 이미 끝(또는 그 너머)이면 자동 스크롤 무의미.
+    if (distance <= 0) return;
     final duration = Duration(milliseconds: (distance * 40).toInt());
     _scrollController.animateTo(
       target,
@@ -112,16 +115,19 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
             child: NotificationListener<ScrollNotification>(
                 onNotification: (n) {
                   if (n is ScrollStartNotification && n.dragDetails != null) {
+                    // 사용자 드래그 시작 — Flutter가 진행 중인 animateTo를
+                    // 자동으로 취소해 주므로 우리는 자동 재개 타이머만 정리.
                     _autoScrolling = false;
+                    _resumeTimer?.cancel();
                   }
                   if (n is ScrollEndNotification && !_autoScrolling) {
-                    Future<void>.delayed(
+                    _resumeTimer?.cancel();
+                    _resumeTimer = Timer(
                       const Duration(seconds: 2),
                       () {
-                        if (mounted) {
-                          _autoScrolling = true;
-                          _startAutoScroll();
-                        }
+                        if (!mounted) return;
+                        _autoScrolling = true;
+                        _startAutoScroll();
                       },
                     );
                   }
@@ -288,6 +294,14 @@ class _LoginSheet extends StatelessWidget {
               _LoginButton(
                 icon: FontAwesomeIcons.google,
                 label: 'Continue with Google',
+                onTap: onLogin,
+              ),
+              const SizedBox(height: 10),
+              // TODO: swap to a proper Kakao logo asset when adding the brand
+              // mark to assets/.
+              _LoginButton(
+                icon: FontAwesomeIcons.solidComment,
+                label: 'Continue with Kakao',
                 onTap: onLogin,
               ),
             ],
@@ -460,7 +474,7 @@ class _AgreementTile extends StatelessWidget {
         child: Row(
           children: [
             FaIcon(
-              checked ? FontAwesomeIcons.squareCheck : FontAwesomeIcons.square,
+              checked ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.circle,
               size: 16,
               color: checked
                   ? context.colors.foreground

@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
@@ -27,6 +30,27 @@ class ContentViewerV2 extends StatefulWidget {
     this.uploaderName,
     this.mediaTypes = const [],
     this.uploadedAt,
+    this.capturedAt,
+    this.capturedLocation,
+    this.photoWidth,
+    this.photoHeight,
+    this.filmTitle,
+    this.filmReleaseDate,
+    this.filmDirector,
+    this.filmKind,
+    this.filmGenres,
+    this.filmRuntimeMinutes,
+    this.musicKind,
+    this.musicTitle,
+    this.musicArtist,
+    this.musicAlbum,
+    this.musicReleaseDate,
+    this.placeName,
+    this.placeAddress,
+    this.placeCategory,
+    this.placeRegion,
+    this.placeLat,
+    this.placeLng,
   });
 
   final int totalCount;
@@ -36,6 +60,60 @@ class ContentViewerV2 extends StatefulWidget {
   final String? uploaderName;
   final List<String> mediaTypes;
   final DateTime? uploadedAt;
+
+  /// Photo-only meta (current index): EXIF capture timestamp.
+  final DateTime? capturedAt;
+
+  /// Photo-only meta (current index): human-readable location.
+  final String? capturedLocation;
+
+  /// Photo-only meta (current index): pixel dimensions.
+  final int? photoWidth;
+  final int? photoHeight;
+
+  /// Film-only meta (current index).
+  final String? filmTitle;
+  final DateTime? filmReleaseDate;
+  final String? filmDirector;
+
+  /// `'movie'` or `'series'`. Defaults to a mock value when null.
+  final String? filmKind;
+
+  /// Film genre tags, displayed as `Drama / Romance / ...` in the metadata.
+  final List<String>? filmGenres;
+
+  /// Runtime in minutes (e.g., 132 → "132 min").
+  final int? filmRuntimeMinutes;
+
+  /// `'track'` or `'album'`. Track shows parent album in metadata; album
+  /// skips the album line.
+  final String? musicKind;
+
+  /// Track or album title — whichever fits the [musicKind].
+  final String? musicTitle;
+
+  final String? musicArtist;
+
+  /// Parent album for a track. Ignored when [musicKind] is `'album'`.
+  final String? musicAlbum;
+
+  final DateTime? musicReleaseDate;
+
+  /// MapBox 기반 장소 메타.
+  final String? placeName;
+
+  /// 풀 주소 (예: "Tokyo Tower, 4-2-8 Shibakoen, Minato City").
+  final String? placeAddress;
+
+  /// POI 카테고리 (예: "Cafe", "Park", "Restaurant"). MapBox `category`.
+  final String? placeCategory;
+
+  /// 도시·국가 같은 상위 지역 컨텍스트 (예: "Seoul, Korea").
+  final String? placeRegion;
+
+  /// 위·경도 (메타에 표시할지 결정 필요).
+  final double? placeLat;
+  final double? placeLng;
 
   String mediaTypeAt(int index) =>
       index < mediaTypes.length ? mediaTypes[index] : 'photo';
@@ -49,12 +127,33 @@ class ContentViewerV2 extends StatefulWidget {
     String? uploaderName,
     List<String> mediaTypes = const [],
     DateTime? uploadedAt,
+    DateTime? capturedAt,
+    String? capturedLocation,
+    int? photoWidth,
+    int? photoHeight,
+    String? filmTitle,
+    DateTime? filmReleaseDate,
+    String? filmDirector,
+    String? filmKind,
+    List<String>? filmGenres,
+    int? filmRuntimeMinutes,
+    String? musicKind,
+    String? musicTitle,
+    String? musicArtist,
+    String? musicAlbum,
+    DateTime? musicReleaseDate,
+    String? placeName,
+    String? placeAddress,
+    String? placeCategory,
+    String? placeRegion,
+    double? placeLat,
+    double? placeLng,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder<void>(
         opaque: false,
         transitionDuration: const Duration(milliseconds: 300),
-        reverseTransitionDuration: Duration.zero,
+        reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) =>
             ContentViewerV2(
           totalCount: totalCount,
@@ -64,6 +163,27 @@ class ContentViewerV2 extends StatefulWidget {
           uploaderName: uploaderName,
           mediaTypes: mediaTypes,
           uploadedAt: uploadedAt,
+          capturedAt: capturedAt,
+          capturedLocation: capturedLocation,
+          photoWidth: photoWidth,
+          photoHeight: photoHeight,
+          filmTitle: filmTitle,
+          filmReleaseDate: filmReleaseDate,
+          filmDirector: filmDirector,
+          filmKind: filmKind,
+          filmGenres: filmGenres,
+          filmRuntimeMinutes: filmRuntimeMinutes,
+          musicKind: musicKind,
+          musicTitle: musicTitle,
+          musicArtist: musicArtist,
+          musicAlbum: musicAlbum,
+          musicReleaseDate: musicReleaseDate,
+          placeName: placeName,
+          placeAddress: placeAddress,
+          placeCategory: placeCategory,
+          placeRegion: placeRegion,
+          placeLat: placeLat,
+          placeLng: placeLng,
         ),
         transitionsBuilder:
             (context, animation, secondaryAnimation, child) {
@@ -102,6 +222,41 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
 
   String get _currentMediaType => widget.mediaTypeAt(_currentIndex);
 
+  /// Downloads the current content's image and opens the OS share sheet,
+  /// which on iOS/Android includes "Save to Photos" / "Save to Files" along
+  /// with sharing to other apps. Currently scoped to photo content; other
+  /// types fall back to a no-op until we wire up film/music/place sharing.
+  Future<void> _shareCurrent() async {
+    if (_currentMediaType != 'photo') {
+      // TODO: support film / music / place share via metadata or external URL.
+      return;
+    }
+    final url = _contentImageUrl();
+    Directory? tempDir;
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode != 200) return;
+      tempDir = await Directory.systemTemp.createTemp('scene_share_');
+      final file = File('${tempDir.path}/photo_$_currentIndex.jpg');
+      await file.writeAsBytes(response.bodyBytes);
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(file.path, mimeType: 'image/jpeg')],
+          subject: widget.sceneName,
+        ),
+      );
+    } catch (_) {
+      // Silently swallow for now; could surface a snackbar.
+    } finally {
+      // Clean up the temp directory after the share sheet flow.
+      if (tempDir != null && tempDir.existsSync()) {
+        try {
+          tempDir.deleteSync(recursive: true);
+        } catch (_) {}
+      }
+    }
+  }
+
   String _contentImageUrl() {
     switch (_currentMediaType) {
       case 'film':
@@ -109,14 +264,10 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
       case 'music':
         return 'https://picsum.photos/seed/music-$_currentIndex/300/300';
       case 'place':
-        final isDark = Theme.of(context).brightness == Brightness.dark;
-        final style = isDark ? 'dark-v11' : 'light-v11';
-        final lat = 37.5512 + _currentIndex * 0.03;
-        final lng = 126.9882 + _currentIndex * 0.03;
-        return 'https://api.mapbox.com/styles/v1/mapbox/$style/static/'
-            'pin-s+888888($lng,$lat)/$lng,$lat,14,0/800x600@2x'
-            '?access_token=$_mapboxToken'
-            '&attribution=false&logo=false';
+        // 실제 데이터 연결 전 dev placeholder. 운영에선 mapbox-static-cache
+        // Edge Function이 생성·캐싱한 정적 지도 이미지(scene_media 버킷의
+        // signed URL)로 교체된다.
+        return 'https://picsum.photos/seed/place-$_currentIndex/800/600';
       default:
         return _currentIndex.isEven
             ? 'https://picsum.photos/seed/content-$_currentIndex/1200/800'
@@ -125,9 +276,75 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
   }
 
   Widget _buildContent(BuildContext context) {
+    final infoOverlay = _showInfo
+        ? _ContentInfo(
+            mediaType: _currentMediaType,
+            index: _currentIndex,
+            capturedAt: widget.capturedAt,
+            capturedLocation: widget.capturedLocation,
+            photoWidth: widget.photoWidth,
+            photoHeight: widget.photoHeight,
+            filmTitle: widget.filmTitle,
+            filmReleaseDate: widget.filmReleaseDate,
+            filmDirector: widget.filmDirector,
+            filmKind: widget.filmKind,
+            filmGenres: widget.filmGenres,
+            filmRuntimeMinutes: widget.filmRuntimeMinutes,
+            musicKind: widget.musicKind,
+            musicTitle: widget.musicTitle,
+            musicArtist: widget.musicArtist,
+            musicAlbum: widget.musicAlbum,
+            musicReleaseDate: widget.musicReleaseDate,
+            placeName: widget.placeName,
+            placeAddress: widget.placeAddress,
+            placeCategory: widget.placeCategory,
+            placeRegion: widget.placeRegion,
+            placeLat: widget.placeLat,
+            placeLng: widget.placeLng,
+          )
+        : null;
+
+    if (_currentMediaType == 'film') {
+      return _FilmContentCard(
+        index: _currentIndex,
+        posterUrl: _contentImageUrl(),
+        title: widget.filmTitle,
+        director: widget.filmDirector,
+        imageOverlay: infoOverlay,
+      );
+    }
+    if (_currentMediaType == 'music') {
+      return _MusicContentCard(
+        index: _currentIndex,
+        albumArtUrl: _contentImageUrl(),
+        title: widget.musicTitle,
+        artist: widget.musicArtist,
+        imageOverlay: infoOverlay,
+      );
+    }
+    if (_currentMediaType == 'place') {
+      return _PlaceContentCard(
+        index: _currentIndex,
+        mapImageUrl: _contentImageUrl(),
+        name: widget.placeName,
+        address: widget.placeAddress,
+        imageOverlay: infoOverlay,
+      );
+    }
     return _ContentImage(
       url: _contentImageUrl(),
       index: _currentIndex,
+      overlay: infoOverlay,
+    );
+  }
+
+  /// 이미지 위에 깔리는 dim + meta 컨테이너. 각 콘텐츠 위젯이 이미지 영역
+  /// 안에서 공통 형태로 렌더하기 위해 사용.
+  static Widget _imageInfoOverlay(BuildContext context, Widget meta) {
+    return Container(
+      color: context.colors.background.withValues(alpha: 0.8),
+      padding: const EdgeInsets.all(24),
+      child: Center(child: meta),
     );
   }
 
@@ -299,32 +516,14 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
                   HapticFeedback.selectionClick();
                 }
               },
-              child: Stack(
-                children: [
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 500),
-                        child: _buildContent(context),
-                      ),
-                    ),
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 500),
+                    child: _buildContent(context),
                   ),
-                  if (_showInfo)
-                    Positioned.fill(
-                      child: Container(
-                        color: context.colors.background
-                            .withValues(alpha: 0.8),
-                        padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: _ContentInfo(
-                            mediaType: _currentMediaType,
-                            index: _currentIndex,
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
+                ),
               ),
             ),
           ),
@@ -379,6 +578,21 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
                     ),
                   ),
                 ),
+                const SizedBox(width: 16),
+                GestureDetector(
+                  onTap: _shareCurrent,
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: Center(
+                      child: FaIcon(
+                        FontAwesomeIcons.arrowUpFromBracket,
+                        size: 18,
+                        color: context.colors.foregroundMuted,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -394,8 +608,13 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
               mediaTypes: widget.mediaTypes,
               onIndexChanged: (i) {
                     setState(() {
-                      _currentIndex = i;
-                      _showInfo = false;
+                      if (i == _currentIndex) {
+                        // 같은 인덱스 다시 탭 → 메타 정보 토글.
+                        _showInfo = !_showInfo;
+                      } else {
+                        _currentIndex = i;
+                        _showInfo = false;
+                      }
                     });
                     HapticFeedback.selectionClick();
                   },
@@ -419,114 +638,209 @@ class _ContentInfo extends StatelessWidget {
   const _ContentInfo({
     required this.mediaType,
     required this.index,
+    this.capturedAt,
+    this.capturedLocation,
+    this.photoWidth,
+    this.photoHeight,
+    this.filmTitle,
+    this.filmReleaseDate,
+    this.filmDirector,
+    this.filmKind,
+    this.filmGenres,
+    this.filmRuntimeMinutes,
+    this.musicKind,
+    this.musicTitle,
+    this.musicArtist,
+    this.musicAlbum,
+    this.musicReleaseDate,
+    this.placeName,
+    this.placeAddress,
+    this.placeCategory,
+    this.placeRegion,
+    this.placeLat,
+    this.placeLng,
   });
 
   final String mediaType;
   final int index;
+  final DateTime? capturedAt;
+  final String? capturedLocation;
+  final int? photoWidth;
+  final int? photoHeight;
+  final String? filmTitle;
+  final DateTime? filmReleaseDate;
+  final String? filmDirector;
+  final String? filmKind;
+  final List<String>? filmGenres;
+  final int? filmRuntimeMinutes;
+  final String? musicKind;
+  final String? musicTitle;
+  final String? musicArtist;
+  final String? musicAlbum;
+  final DateTime? musicReleaseDate;
+  final String? placeName;
+  final String? placeAddress;
+  final String? placeCategory;
+  final String? placeRegion;
+  final double? placeLat;
+  final double? placeLng;
 
   @override
   Widget build(BuildContext context) {
     switch (mediaType) {
       case 'film':
+        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
+        final kind = filmKind ?? (index.isEven ? 'movie' : 'series');
+        final release = filmReleaseDate ??
+            DateTime(2020 + index % 6, 1 + index % 12, 1 + index % 28);
+        final genres = filmGenres ?? _mockFilmGenres[index % _mockFilmGenres.length];
+        final runtime = filmRuntimeMinutes ?? (90 + (index * 7) % 60);
+        final kindLabel =
+            kind.toLowerCase() == 'series' ? 'TV Series' : 'Movie';
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Film Title #${index + 1}',
-              textAlign: TextAlign.center,
-              style: AppTypography.body(18, weight: FontWeight.w600)
-                  .copyWith(color: context.colors.foreground),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: context.colors.foreground.withValues(alpha: 0.1),
+              ),
+              child: Text(
+                kindLabel,
+                style: AppTypography.body(11)
+                    .copyWith(color: context.colors.foreground),
+              ),
             ),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    color: context.colors.foreground.withValues(alpha: 0.1),
-                  ),
-                  child: Text(
-                    index.isEven ? 'Movie' : 'TV Series',
-                    style: AppTypography.body(10)
-                        .copyWith(color: context.colors.foregroundMuted),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${2020 + index % 6}',
-                  style: AppTypography.body(13)
-                      .copyWith(color: context.colors.foregroundMuted),
-                ),
-              ],
+            Text(
+              genres.join(' / '),
+              textAlign: TextAlign.center,
+              style: AppTypography.body(13).copyWith(
+                color: context.colors.foregroundMuted,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${DateFormat.yMMMd('en').format(release)}  ·  $runtime min',
+              style: AppTypography.body(13).copyWith(
+                color: context.colors.foregroundMuted,
+              ),
             ),
           ],
         );
       case 'music':
+        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
+        final musicKindResolved =
+            musicKind ?? (index.isEven ? 'track' : 'album');
+        final isTrack = musicKindResolved.toLowerCase() == 'track';
+        final albumName =
+            musicAlbum ?? _mockMusicAlbums[index % _mockMusicAlbums.length];
+        final musicRelease = musicReleaseDate ??
+            DateTime(2018 + index % 7, 1 + index % 12, 1 + index % 28);
+        final musicKindLabel = isTrack ? 'Track' : 'Album';
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'Track Title #${index + 1}',
-              textAlign: TextAlign.center,
-              style: AppTypography.body(18, weight: FontWeight.w600)
-                  .copyWith(color: context.colors.foreground),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: context.colors.foreground.withValues(alpha: 0.1),
+              ),
+              child: Text(
+                musicKindLabel,
+                style: AppTypography.body(11)
+                    .copyWith(color: context.colors.foreground),
+              ),
             ),
-            const SizedBox(height: 6),
+            if (isTrack) ...[
+              const SizedBox(height: 8),
+              Text(
+                albumName,
+                textAlign: TextAlign.center,
+                style: AppTypography.body(13)
+                    .copyWith(color: context.colors.foregroundMuted),
+              ),
+            ],
+            const SizedBox(height: 8),
             Text(
-              'Artist Name',
+              DateFormat.yMMMd('en').format(musicRelease),
               style: AppTypography.body(13)
                   .copyWith(color: context.colors.foregroundMuted),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              'Album Name',
-              style: AppTypography.body(12)
-                  .copyWith(color: context.colors.foregroundMuted.withValues(alpha: 0.7)),
             ),
           ],
         );
       case 'place':
+        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
+        final categoryResolved = placeCategory ??
+            _mockPlaceCategories[index % _mockPlaceCategories.length];
+        final regionResolved = placeRegion ??
+            _mockPlaceRegions[index % _mockPlaceRegions.length];
+        final latResolved = placeLat ?? (37.5512 + index * 0.03);
+        final lngResolved = placeLng ?? (126.9882 + index * 0.03);
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            FaIcon(
-              FontAwesomeIcons.locationDot,
-              size: 20,
-              color: context.colors.foregroundMuted,
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(4),
+                color: context.colors.foreground.withValues(alpha: 0.1),
+              ),
+              child: Text(
+                categoryResolved,
+                style: AppTypography.body(11)
+                    .copyWith(color: context.colors.foreground),
+              ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
-              'Place Name #${index + 1}',
+              regionResolved,
               textAlign: TextAlign.center,
-              style: AppTypography.body(18, weight: FontWeight.w600)
-                  .copyWith(color: context.colors.foreground),
+              style: AppTypography.body(13)
+                  .copyWith(color: context.colors.foregroundMuted),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
-              '123 Example Street, City',
-              textAlign: TextAlign.center,
+              '${latResolved.toStringAsFixed(4)}°, ${lngResolved.toStringAsFixed(4)}°',
               style: AppTypography.body(13)
                   .copyWith(color: context.colors.foregroundMuted),
             ),
           ],
         );
       default:
-        // photo
+        // photo — EXIF 기반 메타 (장소 / 촬영 시간 / 크기). 호출부가 실제
+        // 값을 안 넘기면 미리보기용 mock으로 대체.
+        final location = capturedLocation ?? 'Seoul, Korea';
+        final captured = capturedAt ??
+            DateTime.now().subtract(Duration(days: index, hours: 3));
+        final width = photoWidth ?? (index.isEven ? 1200 : 800);
+        final height = photoHeight ?? (index.isEven ? 800 : 1200);
+
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Photo #${index + 1}',
+              location,
               textAlign: TextAlign.center,
-              style: AppTypography.body(18, weight: FontWeight.w600)
-                  .copyWith(color: context.colors.foreground),
+              style: AppTypography.body(13)
+                  .copyWith(color: context.colors.foregroundMuted),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
-              '${index.isEven ? '1200 × 800' : '800 × 1200'}',
+              DateFormat.yMMMd('en').add_jm().format(captured),
+              textAlign: TextAlign.center,
+              style: AppTypography.body(13)
+                  .copyWith(color: context.colors.foregroundMuted),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$width × $height',
+              textAlign: TextAlign.center,
               style: AppTypography.body(13)
                   .copyWith(color: context.colors.foregroundMuted),
             ),
@@ -536,93 +850,321 @@ class _ContentInfo extends StatelessWidget {
   }
 }
 
-// ── 영화 카드 (미사용, 보관) ─────────────────────────────────
+// ── 영화 콘텐츠 카드 (포스터 + 제목 + 감독, 단순 레이아웃) ─────
 
-class _FilmCard extends StatelessWidget {
-  const _FilmCard({required this.index});
+class _FilmContentCard extends StatelessWidget {
+  const _FilmContentCard({
+    required this.index,
+    required this.posterUrl,
+    this.title,
+    this.director,
+    this.imageOverlay,
+  });
+
   final int index;
+  final String posterUrl;
+  final String? title;
+  final String? director;
+
+  /// 포스터 위에만 덮이는 dim + 메타 오버레이. null이면 미적용.
+  final Widget? imageOverlay;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: context.colors.clickableArea,
-        borderRadius: AppRadii.mdBorder,
-        border: Border.all(
-          color: context.colors.foreground.withValues(alpha: 0.04),
-          width: 0.5,
-        ),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 포스터
-          ClipRRect(
-            borderRadius: AppRadii.smBorder,
-            child: Image.network(
-              'https://picsum.photos/seed/film-$index/300/450',
-              width: 140,
-              height: 210,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                width: 140,
-                height: 210,
-                color: context.colors.nonClickableArea,
-                child: Center(
-                  child: FaIcon(
-                    FontAwesomeIcons.film,
-                    size: 32,
-                    color: context.colors.foregroundMuted,
+    final resolvedTitle = title ?? 'Film Title #${index + 1}';
+    final resolvedDirector =
+        director ?? _mockFilmDirectors[index % _mockFilmDirectors.length];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: AppRadii.smBorder,
+          child: SizedBox(
+            width: 280,
+            height: 420,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  posterUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: context.colors.nonClickableArea,
+                    child: Center(
+                      child: FaIcon(
+                        FontAwesomeIcons.film,
+                        size: 40,
+                        color: context.colors.foregroundMuted,
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                if (imageOverlay != null)
+                  _ContentViewerV2State._imageInfoOverlay(
+                      context, imageOverlay!),
+              ],
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            'Film Title #${index + 1}',
-            textAlign: TextAlign.center,
-            style: AppTypography.body(17, weight: FontWeight.w600)
-                .copyWith(color: context.colors.foreground),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 2,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(4),
-                  color: context.colors.foreground.withValues(alpha: 0.06),
-                ),
-                child: Text(
-                  index.isEven ? 'Movie' : 'TV Series',
-                  style: AppTypography.body(10).copyWith(
-                    color: context.colors.foregroundMuted,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                '${2020 + index % 6}',
-                style: AppTypography.body(13).copyWith(
-                  color: context.colors.foregroundMuted,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          resolvedTitle,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(17, weight: FontWeight.w600)
+              .copyWith(color: context.colors.foreground),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          resolvedDirector,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(13)
+              .copyWith(color: context.colors.foregroundMuted),
+        ),
+      ],
     );
   }
 }
 
-// ── 음악 카드 ────────────────────────────────────────────────
+const _mockFilmDirectors = [
+  'Christopher Nolan',
+  'Greta Gerwig',
+  'Bong Joon-ho',
+  'Sofia Coppola',
+  'Wes Anderson',
+  'Park Chan-wook',
+];
+
+const _mockFilmGenres = [
+  ['Drama', 'Romance'],
+  ['Drama', 'Coming-of-age'],
+  ['Thriller', 'Mystery'],
+  ['Comedy', 'Drama'],
+  ['Sci-Fi', 'Adventure'],
+  ['Romance', 'Comedy'],
+];
+
+const _mockMusicTitles = [
+  'Mr. Brightside',
+  'Karma Police',
+  'Let It Happen',
+  'Through the Night',
+  'Kyoto',
+  'Super Shy',
+];
+
+const _mockMusicArtists = [
+  'The Killers',
+  'Radiohead',
+  'Tame Impala',
+  'IU',
+  'Phoebe Bridgers',
+  'NewJeans',
+];
+
+const _mockMusicAlbums = [
+  'Hot Fuss',
+  'OK Computer',
+  'Currents',
+  'Palette',
+  'Punisher',
+  'Get Up',
+];
+
+const _mockPlaceNames = [
+  'Tokyo Tower',
+  'Yeonnam-dong Cafe',
+  'Hongik Park',
+  'Namsan Lookout',
+  'Hanok Village',
+  'Gwangjang Market',
+];
+
+const _mockPlaceAddresses = [
+  '4-2-8 Shibakoen, Minato City, Tokyo',
+  '252-1 Yeonnam-dong, Mapo-gu, Seoul',
+  '188 Wausan-ro, Mapo-gu, Seoul',
+  '105 Sopa-ro, Yongsan-gu, Seoul',
+  '99-2 Bukchon-ro 11-gil, Jongno-gu',
+  '88 Changgyeonggung-ro, Jongno-gu',
+];
+
+const _mockPlaceCategories = [
+  'Landmark',
+  'Cafe',
+  'Park',
+  'Lookout',
+  'Heritage',
+  'Market',
+];
+
+const _mockPlaceRegions = [
+  'Tokyo, Japan',
+  'Seoul, Korea',
+  'Seoul, Korea',
+  'Seoul, Korea',
+  'Seoul, Korea',
+  'Seoul, Korea',
+];
+
+// ── 음악 콘텐츠 카드 (앨범아트 + 제목 + 아티스트, 단순 레이아웃) ─
+
+class _MusicContentCard extends StatelessWidget {
+  const _MusicContentCard({
+    required this.index,
+    required this.albumArtUrl,
+    this.title,
+    this.artist,
+    this.imageOverlay,
+  });
+
+  final int index;
+  final String albumArtUrl;
+  final String? title;
+  final String? artist;
+
+  /// 앨범아트 위에만 덮이는 dim + 메타 오버레이. null이면 미적용.
+  final Widget? imageOverlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedTitle =
+        title ?? _mockMusicTitles[index % _mockMusicTitles.length];
+    final resolvedArtist =
+        artist ?? _mockMusicArtists[index % _mockMusicArtists.length];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: AppRadii.smBorder,
+          child: SizedBox(
+            width: 300,
+            height: 300,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  albumArtUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: context.colors.nonClickableArea,
+                    child: Center(
+                      child: FaIcon(
+                        FontAwesomeIcons.music,
+                        size: 40,
+                        color: context.colors.foregroundMuted,
+                      ),
+                    ),
+                  ),
+                ),
+                if (imageOverlay != null)
+                  _ContentViewerV2State._imageInfoOverlay(
+                      context, imageOverlay!),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          resolvedTitle,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(17, weight: FontWeight.w600)
+              .copyWith(color: context.colors.foreground),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          resolvedArtist,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(13)
+              .copyWith(color: context.colors.foregroundMuted),
+        ),
+      ],
+    );
+  }
+}
+
+// ── 장소 콘텐츠 카드 (지도 + 장소명 + 주소, 단순 레이아웃) ─────
+
+class _PlaceContentCard extends StatelessWidget {
+  const _PlaceContentCard({
+    required this.index,
+    required this.mapImageUrl,
+    this.name,
+    this.address,
+    this.imageOverlay,
+  });
+
+  final int index;
+  final String mapImageUrl;
+  final String? name;
+  final String? address;
+
+  /// 지도 이미지 위에만 덮이는 dim + 메타 오버레이.
+  final Widget? imageOverlay;
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedName =
+        name ?? _mockPlaceNames[index % _mockPlaceNames.length];
+    final resolvedAddress =
+        address ?? _mockPlaceAddresses[index % _mockPlaceAddresses.length];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        ClipRRect(
+          borderRadius: AppRadii.smBorder,
+          child: SizedBox(
+            width: 320,
+            height: 220,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.network(
+                  mapImageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => Container(
+                    color: context.colors.nonClickableArea,
+                    child: Center(
+                      child: FaIcon(
+                        FontAwesomeIcons.locationDot,
+                        size: 40,
+                        color: context.colors.foregroundMuted,
+                      ),
+                    ),
+                  ),
+                ),
+                if (imageOverlay != null)
+                  _ContentViewerV2State._imageInfoOverlay(
+                      context, imageOverlay!),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Text(
+          resolvedName,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(17, weight: FontWeight.w600)
+              .copyWith(color: context.colors.foreground),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          resolvedAddress,
+          textAlign: TextAlign.center,
+          style: AppTypography.body(13)
+              .copyWith(color: context.colors.foregroundMuted),
+        ),
+      ],
+    );
+  }
+}
+
+// ── 음악 카드 (구버전, 미사용 보관) ──────────────────────────
 
 class _MusicCard extends StatelessWidget {
   const _MusicCard({required this.index});
@@ -780,10 +1322,17 @@ class _PlaceCard extends StatelessWidget {
 // ── 콘텐츠 이미지 (비율 유지 + radius) ────────────────────────
 
 class _ContentImage extends StatefulWidget {
-  const _ContentImage({required this.url, required this.index});
+  const _ContentImage({
+    required this.url,
+    required this.index,
+    this.overlay,
+  });
 
   final String url;
   final int index;
+
+  /// 이미지 위에 덮이는 dim + 메타. null이면 미적용.
+  final Widget? overlay;
 
   @override
   State<_ContentImage> createState() => _ContentImageState();
@@ -851,11 +1400,19 @@ class _ContentImageState extends State<_ContentImage> {
       aspectRatio: _aspectRatio!,
       child: ClipRRect(
         borderRadius: AppRadii.mdBorder,
-        child: Image.network(
-          widget.url,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.network(
+              widget.url,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+            ),
+            if (widget.overlay != null)
+              _ContentViewerV2State._imageInfoOverlay(
+                  context, widget.overlay!),
+          ],
         ),
       ),
     );
@@ -885,12 +1442,9 @@ class _ThumbnailDial extends StatefulWidget {
       case 'music':
         return 'https://picsum.photos/seed/music-$index/200/200';
       case 'place':
-        final lat = 37.5512 + index * 0.03;
-        final lng = 126.9882 + index * 0.03;
-        return 'https://api.mapbox.com/styles/v1/mapbox/dark-v11/static/'
-            'pin-s+888888($lng,$lat)/$lng,$lat,14,0/200x200@2x'
-            '?access_token=$_mapboxToken'
-            '&attribution=false&logo=false';
+        // 미리보기용 placeholder. 실제 데이터 연결 시엔
+        // mapbox-static-cache Edge Function의 결과 URL을 사용.
+        return 'https://picsum.photos/seed/place-$index/200/200';
       default:
         return 'https://picsum.photos/seed/content-$index/200/200';
     }
@@ -917,6 +1471,12 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
       initialScrollOffset: widget.currentIndex * _itemExtent,
     );
     _scrollController.addListener(_onScroll);
+    // 최초 레이아웃 후엔 ScrollController.position.haveDimensions가 true가
+    // 되지만 컨트롤러는 그 사실을 따로 notify하지 않는다. 초기 곡률
+    // transform이 계산되도록 첫 프레임 후 한 번 강제로 rebuild.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _onScroll() {

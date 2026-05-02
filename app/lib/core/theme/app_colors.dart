@@ -22,7 +22,7 @@ class AppColors {
   static const foregroundMuted = Color(0xFFA8A8A6);
 
   // ── Utility ──────────────────────────────────────────────────
-  static const hairline = Color(0x14FFFFFF);
+  static const hairline = Color(0x0AFFFFFF);
   static const scrimTransparent = Color(0x00000000);
   static const scrimSolid = Color(0xD9000000);
 
@@ -68,7 +68,7 @@ class AppColorPalette {
     nonClickableArea: Color(0xFF1A1A1C),
     foreground: Color(0xFFEEEEEC),
     foregroundMuted: Color(0xFFA8A8A6),
-    hairline: Color(0x14FFFFFF),
+    hairline: Color(0x0AFFFFFF),
     scrimSolid: Color(0xD9000000),
     filmStock: Color(0xFF0A0A0B),
     gradientBase: Color(0xFF151517),
@@ -82,7 +82,7 @@ class AppColorPalette {
     nonClickableArea: Color(0xFFF0F0EE),
     foreground: Color(0xFF1A1A1C),
     foregroundMuted: Color(0xFF6E6E6C),
-    hairline: Color(0x14000000),
+    hairline: Color(0x0A000000),
     scrimSolid: Color(0xD9FFFFFF),
     filmStock: Color(0xFFD8D8D6),
     gradientBase: Color(0xFFF5F5F3),

@@ -78,8 +78,16 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        const SizedBox(height: 8),
+        Text(
+          'New Moment',
+          style: AppTypography.display(20).copyWith(
+            color: context.colors.foreground,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 24),
         if (widget.showSceneHeader) ...[
-          const SizedBox(height: 16),
           // Scene 정보 (중앙 정렬, 세로 배치)
           GestureDetector(
             onTap: _showScenePicker,
@@ -221,7 +229,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                     },
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
                 GestureDetector(
                   onTap: () {
                     Navigator.of(context).pop();

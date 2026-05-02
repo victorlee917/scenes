@@ -12,6 +12,7 @@ import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../subscription/subscription_screen.dart';
 import '../models/scene.dart';
+import 'moment_selection_screen.dart';
 
 /// Scene 재생 화면.
 ///
@@ -563,7 +564,7 @@ class _PlaySceneScreenState extends State<PlaySceneScreen>
                                 behavior: HitTestBehavior.opaque,
                                 onTap: _togglePause,
                                 child: SizedBox(
-                                  width: 52,
+                                  width: 48,
                                   child: Center(
                                     child: FaIcon(
                                       _paused
@@ -1007,6 +1008,15 @@ class _PlayFilterSheetState extends State<_PlayFilterSheet> {
   late final Set<String> _mediaTypes;
   late PhotoFilter _photoFilter;
 
+  /// MomentSelectionScreen에서 선택한 콘텐츠 ID. 비어 있으면 "전체" 의미.
+  final Set<String> _selectedMomentIds = {};
+
+  /// 선택된 moment 수가 있으면 그 수, 없으면 전체 콘텐츠 합계.
+  int _momentsCount(List<Scene> scenes) {
+    if (_selectedMomentIds.isNotEmpty) return _selectedMomentIds.length;
+    return scenes.fold<int>(0, (sum, s) => sum + s.media.total);
+  }
+
   static const _filterLabels = {
     PhotoFilter.normal: 'Normal',
     PhotoFilter.vintage: 'Vintage',
@@ -1052,106 +1062,66 @@ class _PlayFilterSheetState extends State<_PlayFilterSheet> {
         const SizedBox(height: 24),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.colors.clickableArea,
-              borderRadius: AppRadii.sheetInnerBorder,
-              border: Border.all(
-                color: context.colors.foreground.withValues(alpha: 0.04),
-                width: 0.5,
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 280),
-                  child: ListView.builder(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    shrinkWrap: true,
-                    itemCount: widget.scenes.length,
-                    itemBuilder: (context, index) {
-                  final scene = widget.scenes[index];
-                  final selected = _sceneIds.contains(scene.id);
-                  return GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _toggleScene(scene.id),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      child: Row(
-                        children: [
-                          ClipOval(
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: Image.network(
-                                scene.coverImageUrl,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => Container(
-                                  color: context.colors.nonClickableArea,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  '#${scene.number}',
-                                  style: AppTypography.display(11).copyWith(
-                                    color: context.colors.foregroundMuted,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ShaderMask(
-                                    shaderCallback: (bounds) =>
-                                        const LinearGradient(
-                                      colors: [
-                                        Colors.white,
-                                        Colors.white,
-                                        Colors.transparent,
-                                      ],
-                                      stops: [0.0, 0.85, 1.0],
-                                    ).createShader(bounds),
-                                    blendMode: BlendMode.dstIn,
-                                    child: Text(
-                                      scene.title,
-                                      maxLines: 1,
-                                      softWrap: false,
-                                      overflow: TextOverflow.clip,
-                                      style: AppTypography.body(15,
-                                              weight: FontWeight.w500)
-                                          .copyWith(
-                                              color: context
-                                                  .colors.foreground),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          if (selected)
-                            FaIcon(
-                              FontAwesomeIcons.check,
-                              size: 14,
-                              color: context.colors.foreground,
-                            )
-                          else
-                            const SizedBox(width: 14),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-                  ),
+          child: GestureDetector(
+            onTap: () async {
+              final result = await Navigator.of(context).push<Set<String>>(
+                MomentSelectionScreen.route(
+                  initiallySelected: _selectedMomentIds,
                 ),
-              ],
+              );
+              if (result != null) {
+                setState(() {
+                  _selectedMomentIds
+                    ..clear()
+                    ..addAll(result);
+                });
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 16,
+              ),
+              decoration: BoxDecoration(
+                color: context.colors.clickableArea,
+                borderRadius: AppRadii.sheetInnerBorder,
+                border: Border.all(
+                  color: context.colors.foreground.withValues(alpha: 0.04),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Select Moments',
+                          style: AppTypography.body(15,
+                                  weight: FontWeight.w600)
+                              .copyWith(
+                            color: context.colors.foreground,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${_momentsCount(widget.scenes)} moments',
+                          style: AppTypography.body(12).copyWith(
+                            color: context.colors.foregroundMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FaIcon(
+                    FontAwesomeIcons.chevronRight,
+                    size: 14,
+                    color: context.colors.foregroundMuted,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1206,16 +1176,17 @@ class _PlayFilterSheetState extends State<_PlayFilterSheet> {
             ),
           )
         else
-          GestureDetector(
-            onTap: () {
-              Navigator.of(context).pop();
-              Navigator.of(context).push(SubscriptionScreen.route());
-            },
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: GestureDetector(
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(SubscriptionScreen.route());
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 18,
+                  horizontal: 20,
+                  vertical: 18,
                 ),
                 decoration: BoxDecoration(
                   borderRadius: AppRadii.sheetInnerBorder,

@@ -55,7 +55,7 @@ class _FilmCanister extends StatelessWidget {
         shape: BoxShape.circle,
         color: context.colors.filmStock,
         border: Border.all(
-          color: context.colors.foreground.withValues(alpha: 0.16),
+          color: context.colors.hairline,
           width: 1,
         ),
         boxShadow: [

@@ -153,6 +153,7 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
             onRefresh: _handleRefresh,
             color: context.colors.foreground,
             backgroundColor: context.colors.nonClickableArea,
+            elevation: 0,
             displacement: padding.top + 48 + 10,
             edgeOffset: 0,
             child: CustomScrollView(

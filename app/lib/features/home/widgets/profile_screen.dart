@@ -121,12 +121,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
               blendMode: BlendMode.dstIn,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final topPad = padding.top + DetailAppBar.barHeight + 80;
+                  final topPad = padding.top + DetailAppBar.barHeight + 60;
                   final bottomPad = padding.bottom + 80;
                   return RefreshIndicator(
                     onRefresh: _handleRefresh,
                     color: context.colors.foreground,
                     backgroundColor: context.colors.nonClickableArea,
+                    elevation: 0,
                     displacement: padding.top + 48 + 10,
                     edgeOffset: 0,
                     child: SingleChildScrollView(
@@ -645,9 +646,12 @@ class _ScenesMaxBanner extends StatelessWidget {
       },
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         decoration: BoxDecoration(
-          borderRadius: AppRadii.lgBorder,
+          borderRadius: AppRadii.sheetInnerBorder,
+          // 카드가 시트 배너보다 커서 동일 색 stop으로는 gradient가 묽어
+          // 보임. stops로 transition 구간을 첫 60%로 압축해 시각적 변화를
+          // 작은 시트 배너 수준으로 회복.
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -655,6 +659,7 @@ class _ScenesMaxBanner extends StatelessWidget {
               context.colors.surface,
               context.colors.surfaceElevated,
             ],
+            stops: const [0.0, 0.6],
           ),
           border: Border.all(
             color: context.colors.foreground.withValues(alpha: 0.06),

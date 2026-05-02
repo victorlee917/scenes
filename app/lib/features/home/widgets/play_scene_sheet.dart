@@ -71,7 +71,12 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
   }
 
   void _scrollToSelected() {
-    final scenes = ref.read(homeViewModelProvider).scenes;
+    // 리스트는 콘텐츠가 1개 이상인 scene만 포함하므로 동일하게 필터.
+    final scenes = ref
+        .read(homeViewModelProvider)
+        .scenes
+        .where((s) => s.media.total > 0)
+        .toList();
     final index = scenes.indexWhere((s) => s.id == widget.defaultSceneId);
     if (index <= 0 || !_scrollController.hasClients) return;
     final offset = (index * _tileHeight).clamp(
@@ -105,7 +110,12 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final scenes = ref.watch(homeViewModelProvider.select((s) => s.scenes));
+    final allScenes =
+        ref.watch(homeViewModelProvider.select((s) => s.scenes));
+    // 재생 가능한 scene = 콘텐츠가 1개 이상 있는 scene.
+    final scenes =
+        allScenes.where((s) => s.media.total > 0).toList();
+    final hasPlayable = scenes.isNotEmpty;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -130,66 +140,74 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
                 width: 0.5,
               ),
             ),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280),
-              child: ListView.builder(
-                controller: _scrollController,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                shrinkWrap: true,
-                itemCount:
-                    scenes.length + 1,
-                itemBuilder: (context, index) {
-                  if (index >= scenes.length) {
-                    if (widget.isSubscribed) {
-                      final allSelected =
-                          _selectedIds.length == scenes.length;
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Center(
-                            child: Container(
-                              width: 30,
-                              height: 0.5,
-                              color: context.colors.foreground
-                                  .withValues(alpha: 0.06),
-                            ),
-                          ),
-                          _SelectAllTile(
-                            allSelected: allSelected,
-                            onTap: () {
-                              setState(() {
-                                if (allSelected) {
-                                  _selectedIds.clear();
-                                } else {
-                                  _selectedIds.addAll(
-                                    scenes.map((s) => s.id),
-                                  );
-                                }
-                              });
-                            },
-                          ),
-                        ],
-                      );
-                    }
-                    return _HdBanner(
-                      onTap: () {
-                        Navigator.of(context).pop();
-                        Navigator.of(context)
-                            .push(SubscriptionScreen.route());
+            child: !hasPlayable
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 32),
+                    child: Center(
+                      child: Text(
+                        'No scenes ready to play yet.',
+                        textAlign: TextAlign.center,
+                        style: AppTypography.body(13).copyWith(
+                          color: context.colors.foregroundMuted,
+                        ),
+                      ),
+                    ),
+                  )
+                : ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 280),
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      shrinkWrap: true,
+                      // Subscribed 사용자에게만 마지막에 "Select All" tile.
+                      itemCount:
+                          scenes.length + (widget.isSubscribed ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        if (index >= scenes.length) {
+                          final allSelected =
+                              _selectedIds.length == scenes.length;
+                          return Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Center(
+                                child: Container(
+                                  width: 30,
+                                  height: 0.5,
+                                  color: context.colors.foreground
+                                      .withValues(alpha: 0.06),
+                                ),
+                              ),
+                              _SelectAllTile(
+                                allSelected: allSelected,
+                                onTap: () {
+                                  setState(() {
+                                    if (allSelected) {
+                                      _selectedIds.clear();
+                                    } else {
+                                      _selectedIds.addAll(
+                                        scenes.map((s) => s.id),
+                                      );
+                                    }
+                                  });
+                                },
+                              ),
+                            ],
+                          );
+                        }
+                        final scene = scenes[index];
+                        return _PlaySceneTile(
+                          scene: scene,
+                          selected: _selectedIds.contains(scene.id),
+                          onTap: () => _toggle(scene.id),
+                        );
                       },
-                    );
-                  }
-                  final scene = scenes[index];
-                  return _PlaySceneTile(
-                    scene: scene,
-                    selected: _selectedIds.contains(scene.id),
-                    onTap: () => _toggle(scene.id),
-                  );
-                },
-              ),
-            ),
+                    ),
+                  ),
           ),
         ),
+        // 미디어 필터는 유료(scenes_hd) 회원에게만 노출.
+        if (widget.isSubscribed) ...[
         const SizedBox(height: 14),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -272,6 +290,20 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
             ],
           ),
         ),
+        ],
+        // Scenes HD 유도 배너는 free 사용자에게만, play 버튼 바로 위에.
+        if (!widget.isSubscribed) ...[
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _HdBanner(
+              onTap: () {
+                Navigator.of(context).pop();
+                Navigator.of(context).push(SubscriptionScreen.route());
+              },
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -448,23 +480,21 @@ class _HdBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-          decoration: BoxDecoration(
-            borderRadius: AppRadii.sheetInnerBorder,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [context.colors.surface, context.colors.surfaceElevated],
-            ),
-            border: Border.all(
-              color: context.colors.foreground.withValues(alpha: 0.06),
-              width: 0.5,
-            ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          borderRadius: AppRadii.sheetInnerBorder,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [context.colors.surface, context.colors.surfaceElevated],
           ),
-          child: Row(
+          border: Border.all(
+            color: context.colors.foreground.withValues(alpha: 0.06),
+            width: 0.5,
+          ),
+        ),
+        child: Row(
             children: [
               Expanded(
                 child: Column(
@@ -495,7 +525,6 @@ class _HdBanner extends StatelessWidget {
               ),
             ],
           ),
-        ),
       ),
     );
   }

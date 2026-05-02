@@ -278,7 +278,7 @@ class _PhotoPickerScreenState extends State<PhotoPickerScreen> {
                       vertical: 12,
                     ),
                     child: Text(
-                      'Save${hasSelection ? ' (${_selected.length})' : ''}',
+                      'Save',
                       style: AppTypography.body(15, weight: FontWeight.w600)
                           .copyWith(color: context.colors.foreground),
                     ),
