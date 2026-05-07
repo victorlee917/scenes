@@ -13,10 +13,13 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../../core/theme/app_typography.dart';
 import '../models/scene.dart';
+import '../../couple/couple_view_model.dart';
+import '../../profile/profile_view_model.dart';
 import '../../settings/settings_screen.dart';
 import 'edit_profile_sheet.dart';
 import '../../share/share_settings_screen.dart';
 import '../../subscription/subscription_screen.dart';
+import '../../subscription/subscription_view_model.dart';
 import '../home_view_model.dart';
 import 'detail_app_bar.dart';
 
@@ -65,8 +68,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   }
 
   Future<void> _handleRefresh() async {
-    // TODO: Supabase에서 프로필 데이터 다시 로드
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    // 본인 profile + active couple(파트너 since_date 등 포함)을 동시에 새로
+    // 받음. Future.wait로 두 fetch 병렬 — refresh 인디케이터가 둘 다 끝나야
+    // 사라짐.
+    await Future.wait<void>([
+      ref.read(myProfileProvider.notifier).refresh(),
+      ref.read(activeCoupleProvider.notifier).refresh(),
+    ]);
   }
 
   void _showDatePicker(DateTime current) {
@@ -98,6 +106,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       const SceneMediaCounts(),
       (sum, s) => sum + s.media,
     );
+    // 둘 중 한 명이라도 한글이면 두 아바타 이니셜과 합쳐진 이름 모두
+    // Hahmlet으로 통일. display(text:) 의 한글 감지에 합본 문자열을 넘긴다.
+    final jointName = '${couple.partnerAName} ${couple.partnerBName}';
     final routeAnim = ModalRoute.of(context)?.animation ??
         const AlwaysStoppedAnimation<double>(1);
 
@@ -126,7 +137,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   return RefreshIndicator(
                     onRefresh: _handleRefresh,
                     color: context.colors.foreground,
-                    backgroundColor: context.colors.nonClickableArea,
+                    backgroundColor: context.colors.clickableArea,
                     elevation: 0,
                     displacement: padding.top + 48 + 10,
                     edgeOffset: 0,
@@ -163,26 +174,24 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               createRectTween: ProfileScreen.straightRectTween,
                               child: _Avatar(
                                 url: couple.partnerAImageUrl,
+                                name: couple.partnerAName,
                                 size: avatarSize,
+                                fontHint: jointName,
                               ),
                             ),
                           ),
                         ),
                         Positioned(
                           left: avatarSize - overlap,
-                          child: GestureDetector(
-                            onTap: () => EditProfileSheet.show(
-                              context: context,
-                              currentName: couple.partnerBName,
-                              currentImageUrl: couple.partnerBImageUrl,
-                            ),
-                            child: Hero(
-                              tag: ProfileScreen.partnerBHeroTag,
-                              createRectTween: ProfileScreen.straightRectTween,
-                              child: _Avatar(
-                                url: couple.partnerBImageUrl,
-                                size: avatarSize,
-                              ),
+                          // 파트너 프로필은 본인 화면에서 수정 불가 — 탭 비활성.
+                          child: Hero(
+                            tag: ProfileScreen.partnerBHeroTag,
+                            createRectTween: ProfileScreen.straightRectTween,
+                            child: _Avatar(
+                              url: couple.partnerBImageUrl,
+                              name: couple.partnerBName,
+                              size: avatarSize,
+                              fontHint: jointName,
                             ),
                           ),
                         ),
@@ -195,7 +204,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     child: Text(
                       '${couple.partnerAName} · ${couple.partnerBName}',
                       textAlign: TextAlign.center,
-                      style: AppTypography.display(22).copyWith(
+                      style: AppTypography.display(22, text: jointName)
+                          .copyWith(
                         color: context.colors.foreground,
                         fontWeight: FontWeight.w700,
                       ),
@@ -550,11 +560,19 @@ class _SinceDatePicker extends StatefulWidget {
 
 class _SinceDatePickerState extends State<_SinceDatePicker> {
   late DateTime _selected;
+  // 시트 열린 시점의 now를 고정 — build 안에서 매번 DateTime.now() 호출하면
+  // _selected와 어긋나 assertion 위험.
+  late final DateTime _max;
+  static final DateTime _min = DateTime(2000);
 
   @override
   void initState() {
     super.initState();
-    _selected = widget.initialDate;
+    // started_at이 UTC로 들어오면 KST 등에서 timezone 어긋남으로 picker
+    // assertion fail. local 변환 + 미래 시각 클램프.
+    _max = DateTime.now();
+    final initialLocal = widget.initialDate.toLocal();
+    _selected = initialLocal.isAfter(_max) ? _max : initialLocal;
   }
 
   @override
@@ -594,8 +612,8 @@ class _SinceDatePickerState extends State<_SinceDatePicker> {
             child: CupertinoDatePicker(
               mode: CupertinoDatePickerMode.date,
               initialDateTime: _selected,
-              maximumDate: DateTime.now(),
-              minimumDate: DateTime(2000),
+              maximumDate: _max,
+              minimumDate: _min,
               onDateTimeChanged: (date) {
                 setState(() => _selected = date);
               },
@@ -632,13 +650,12 @@ class _SinceDatePickerState extends State<_SinceDatePicker> {
   }
 }
 
-class _ScenesMaxBanner extends StatelessWidget {
-  const _ScenesMaxBanner({this.isSubscribed = false});
-
-  final bool isSubscribed;
+class _ScenesMaxBanner extends ConsumerWidget {
+  const _ScenesMaxBanner();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isSubscribed = ref.watch(isSubscribedProvider);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -711,13 +728,26 @@ class _ScenesMaxBanner extends StatelessWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.url, required this.size});
+  const _Avatar({
+    required this.url,
+    required this.name,
+    required this.size,
+    this.fontHint,
+  });
 
   final String url;
+  final String name;
   final double size;
+  // 한글 폰트 감지용 합본 문자열. null이면 [name] 자체로 판정.
+  final String? fontHint;
 
   @override
   Widget build(BuildContext context) {
+    final fallback = _InitialFallback(
+      name: name,
+      size: size,
+      fontHint: fontHint,
+    );
     return Container(
       width: size,
       height: size,
@@ -727,15 +757,105 @@ class _Avatar extends StatelessWidget {
         border: Border.all(color: context.colors.background, width: 3),
       ),
       child: ClipOval(
-        child: Image.network(
-          url,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) =>
-              ColoredBox(color: context.colors.nonClickableArea),
+        child: url.isEmpty
+            ? fallback
+            : Image.network(
+                url,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+                // precache cache hit이면 wasSync=true → 즉시 child. 새로 fetch가
+                // 필요한 경우(예: 새 avatar 저장 직후)엔 frame이 들어올 때까지
+                // dim+spinner overlay를 fallback 위에 깔아 진행 중임을 보여줌.
+                frameBuilder: (ctx, child, frame, wasSync) {
+                  if (wasSync || frame != null) return child;
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      fallback,
+                      const ColoredBox(
+                        color: Color(0x99000000),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+      ),
+    );
+  }
+}
+
+/// 사진이 없거나 로드 실패 시 표시할 이니셜 fallback. 이름의 첫 글자를 가운데.
+///
+/// 100x100 reference 박스에 fontSize=42 (= 100 * 0.42 비율)로 한 번만 layout한 뒤,
+/// FittedBox가 부모 크기에 맞춰 visual scale만 적용 → Hero flight 중 매 프레임
+/// re-layout되며 metric이 흔들리는 문제 없음.
+class _InitialFallback extends StatelessWidget {
+  const _InitialFallback({
+    required this.name,
+    required this.size,
+    this.fontHint,
+  });
+
+  final String name;
+  final double size;
+  // 한글 폰트 감지용 합본 문자열. null이면 [name] 자체로 판정.
+  final String? fontHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = _firstGrapheme(name);
+    return ColoredBox(
+      color: context.colors.nonClickableArea,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 100,
+          height: 100,
+          // 시각적 중심을 위해 글자를 2px(ref 단위 ~4) 위로 — 폰트 baseline이
+          // bounding box보다 약간 아래에 있어 그냥 Center하면 살짝 처져 보임.
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Center(
+              child: Text(
+                initial,
+                textAlign: TextAlign.center,
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToFirstAscent: false,
+                  applyHeightToLastDescent: false,
+                ),
+                style: AppTypography.display(42, text: fontHint ?? initial)
+                    .copyWith(
+                  color: context.colors.foregroundMuted,
+                  fontWeight: FontWeight.w500,
+                  height: 1.0,
+                  // Hero Overlay 레이어에서 Material 조상 없어 DefaultTextStyle
+                  // fallback의 노란 underline이 적용됨 — 명시적으로 끔.
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+/// 한글/이모지/영문 모두 안전하게 첫 글자 추출. 빈 문자열이면 빈 문자열 반환.
+String _firstGrapheme(String s) {
+  final trimmed = s.trim();
+  if (trimmed.isEmpty) return '';
+  return String.fromCharCodes(trimmed.runes.take(1)).toUpperCase();
 }

@@ -44,6 +44,7 @@ class AppColorPalette {
     required this.scrimSolid,
     required this.filmStock,
     required this.gradientBase,
+    required this.shadow,
   });
 
   final Color background;
@@ -60,6 +61,10 @@ class AppColorPalette {
   /// 그라데이션 scrim 기본색 (앱바, 상하단 shadow 등).
   final Color gradientBase;
 
+  /// BoxShadow color. 테마에 따라 자연스럽게 어둡되 톤을 맞춤. 알파가 이미
+  /// 적용된 값이라 BoxShadow에 그대로 넣어 쓰면 됨.
+  final Color shadow;
+
   static const dark = AppColorPalette._(
     background: Color(0xFF151517),
     surface: Color(0xFF1E1E21),
@@ -72,6 +77,10 @@ class AppColorPalette {
     scrimSolid: Color(0xD9000000),
     filmStock: Color(0xFF0A0A0B),
     gradientBase: Color(0xFF151517),
+    // BoxShadow color는 full opacity로 둔다. alpha를 낮추면 가우시안 falloff
+    // 거리가 짧아져 그림자 끝나는 지점이 visible boundary로 보이는 "층진"
+    // 인상이 됨. spread/blur가 자연스럽게 fade를 만들도록 색은 진하게.
+    shadow: Color(0xFF000000),
   );
 
   static const light = AppColorPalette._(
@@ -86,5 +95,8 @@ class AppColorPalette {
     scrimSolid: Color(0xD9FFFFFF),
     filmStock: Color(0xFFD8D8D6),
     gradientBase: Color(0xFFF5F5F3),
+    // 라이트 배경에선 full opacity warm dark가 너무 진해 캐니스터 그림자가
+    // 카드 같이 보임 — 0x33(20%)로 낮춰 은은하게.
+    shadow: Color(0x331A1A1C),
   );
 }

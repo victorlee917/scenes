@@ -39,7 +39,6 @@ dependencies:
   flutter_riverpod: ^2.6.1
   flutter_staggered_grid_view: ^0.7.0
   go_router: ^14.8.1
-  google_fonts: ^6.2.1
   intl: any
   sensors_plus: ^6.1.1
   supabase_flutter: ^2.12.2
@@ -48,10 +47,21 @@ dependencies:
   url_launcher: ^6.3.2
   image_picker: ^1.2.1
   image_cropper: ^12.2.1
+  flutter_image_compress: ^2.4.0
+  http_parser: ^4.1.2
+  shimmer: ^3.0.0
   shared_preferences: ^2.5.5
   photo_manager: ^3.9.0
   http: ^1.6.0
   grain: ^0.0.1
+  exif: ^3.3.0
+  kakao_flutter_sdk_user: ^1.9.7+3
+  crypto: ^3.0.6
+  google_sign_in: ^7.2.0
+  sign_in_with_apple: ^7.0.1
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
+  flutter_native_splash: ^2.4.6
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +73,26 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+# 앱 아이콘 생성 설정. 변경 시 `dart run flutter_launcher_icons`로 재생성.
+# 소스는 1024x1024 PNG여야 하고 baked-in 배경이 있어야 iOS 검수가 통과한다.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/logo/logo_dark.png"
+  remove_alpha_ios: true
+
+# 스플래시 화면 생성 설정. 변경 시 `dart run flutter_native_splash:create`로
+# 재생성. 앱이 dark-first(themeMode 기본값 ThemeMode.dark)고 iOS launch
+# screen은 OS의 다크모드만 인식하기 때문에 OS가 라이트 모드면 우리 앱 테마와
+# 어긋남. 그래서 splash는 항상 다크 변형 하나로 통일.
+flutter_native_splash:
+  color: "#151517"
+  image: "assets/logo/logo_dark.png"
+  android_12:
+    color: "#151517"
+    image: "assets/logo/logo_dark.png"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -82,8 +112,15 @@ flutter:
     - family: Pretendard
       fonts:
         - asset: fonts/PretendardVariable.ttf
+    - family: Hahmlet
+      fonts:
+        - asset: fonts/Hahmlet.ttf
+    - family: PlayfairDisplay
+      fonts:
+        - asset: fonts/PlayfairDisplay.ttf
 
-  # assets:
+  assets:
+    - assets/logo/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

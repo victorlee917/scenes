@@ -8,21 +8,36 @@
             "name": "app",
             "cwd": "app",
             "request": "launch",
-            "type": "dart"
+            "type": "dart",
+            "toolArgs": [
+                "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
+                "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+            ]
         },
         {
             "name": "app (profile mode)",
             "cwd": "app",
             "request": "launch",
             "type": "dart",
-            "flutterMode": "profile"
+            "flutterMode": "profile",
+            "toolArgs": [
+                "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
+                "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+            ]
         },
         {
             "name": "app (release mode)",
             "cwd": "app",
             "request": "launch",
             "type": "dart",
-            "flutterMode": "release"
+            "flutterMode": "release",
+            "toolArgs": [
+                "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
+                "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+            ]
         }
     ]
 }

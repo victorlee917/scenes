@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_colors_ext.dart';
+import '../../../core/theme/app_typography.dart';
 import '../home_view_model.dart';
 import 'profile_screen.dart';
 
@@ -39,6 +39,7 @@ class CoupleStrip extends ConsumerWidget {
                     createRectTween: ProfileScreen.straightRectTween,
                     child: _Avatar(
                       url: couple.partnerAImageUrl,
+                      name: couple.partnerAName,
                       size: avatarSize,
                     ),
                   ),
@@ -50,6 +51,7 @@ class CoupleStrip extends ConsumerWidget {
                     createRectTween: ProfileScreen.straightRectTween,
                     child: _Avatar(
                       url: couple.partnerBImageUrl,
+                      name: couple.partnerBName,
                       size: avatarSize,
                     ),
                   ),
@@ -64,13 +66,15 @@ class CoupleStrip extends ConsumerWidget {
 }
 
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.url, required this.size});
+  const _Avatar({required this.url, required this.name, required this.size});
 
   final String url;
+  final String name;
   final double size;
 
   @override
   Widget build(BuildContext context) {
+    final fallback = _initialFallback(context);
     return Container(
       width: size,
       height: size,
@@ -80,16 +84,57 @@ class _Avatar extends StatelessWidget {
         border: Border.all(color: context.colors.background, width: 2),
       ),
       child: ClipOval(
-        child: Image.network(
-          url,
-          width: size,
-          height: size,
-          fit: BoxFit.cover,
-          errorBuilder: (_, _, _) =>
-              ColoredBox(color: context.colors.nonClickableArea),
-          loadingBuilder: (context, child, progress) => progress == null
-              ? child
-              : ColoredBox(color: context.colors.nonClickableArea),
+        child: url.isEmpty
+            ? fallback
+            : Image.network(
+                url,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => fallback,
+                frameBuilder: (context, child, frame, wasSync) {
+                  if (wasSync || frame != null) return child;
+                  return fallback;
+                },
+              ),
+      ),
+    );
+  }
+
+  Widget _initialFallback(BuildContext context) {
+    final trimmed = name.trim();
+    final initial = trimmed.isEmpty
+        ? ''
+        : String.fromCharCodes(trimmed.runes.take(1)).toUpperCase();
+    // FittedBox로 100 reference를 visual scale — Hero flight 중 re-layout
+    // 없이 매끄럽게 크기만 변함.
+    return ColoredBox(
+      color: context.colors.nonClickableArea,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: 100,
+          height: 100,
+          // 시각적 중심을 위해 글자를 살짝 위로.
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Center(
+              child: Text(
+                initial,
+                textAlign: TextAlign.center,
+                textHeightBehavior: const TextHeightBehavior(
+                  applyHeightToFirstAscent: false,
+                  applyHeightToLastDescent: false,
+                ),
+                style: AppTypography.display(42).copyWith(
+                  color: context.colors.foregroundMuted,
+                  fontWeight: FontWeight.w500,
+                  height: 1.0,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

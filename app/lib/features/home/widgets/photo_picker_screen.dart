@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:photo_manager/photo_manager.dart';
 
@@ -9,23 +10,66 @@ import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../upload/upload_queue_view_model.dart';
 import '../models/scene.dart';
 import 'detail_app_bar.dart';
 import 'scene_detail_screen.dart';
 
 /// 사진 선택 화면.
-class PhotoPickerScreen extends StatefulWidget {
-  const PhotoPickerScreen({super.key, this.scene});
+///
+/// 업로드 단계는 다음을 거친다:
+/// 1. AssetEntity의 `originBytes` 로드.
+/// 2. EXIF 파싱(`PhotoMetadataExtractor`) — 없어도 기본 정보는 채움.
+/// 3. thumb/full 두 변형 생성 (`flutter_image_compress`). tier 무관 동일.
+///    - thumb: 600 long edge, q75
+///    - full : 1920 long edge, q85
+/// 4. EF `upload-photo-content` 호출 (multipart full+thumb+payload JSON).
+/// 5. 받아온 Content를 contentsForSceneProvider 리스트에 append.
+class PhotoPickerScreen extends ConsumerStatefulWidget {
+  const PhotoPickerScreen({
+    super.key,
+    this.scene,
+    this.momentDate,
+    this.landOnSceneDetail = true,
+    this.maxSelection = _kDefaultMaxSelection,
+  });
 
   final Scene? scene;
+  // AddMediaSheet에서 사용자가 고른 모먼트 날짜. 업로드 시 occurred_at으로
+  // 저장됨 (EXIF taken_at보다 우선).
+  final DateTime? momentDate;
 
-  static Route<List<AssetEntity>?> route({Scene? scene}) {
+  /// save 후 SceneDetail로 push할지 여부. home처럼 detail 밖에서 진입했을 땐
+  /// true, 이미 SceneDetail 위에서 + 버튼으로 진입했을 땐 false — 같은 detail
+  /// 화면이 stack에 중복 쌓이는 것 방지.
+  final bool landOnSceneDetail;
+
+  /// 한 batch에서 선택 가능한 최대 사진 수. AddMediaSheet가 scene의 남은
+  /// 한도를 계산해 넘김(remaining = limit - count). picker 자체의 batch 상한
+  /// (성능)과 함께 작은 쪽이 유효 한도로 적용된다.
+  final int maxSelection;
+
+  /// picker 자체의 batch 성능 상한 — 한 번에 너무 많이 고르면 압축·전송이
+  /// 부담스러움. 사용자의 남은 slot이 더 작으면 그게 우선.
+  static const int _kDefaultMaxSelection = 20;
+
+  static Route<List<AssetEntity>?> route({
+    Scene? scene,
+    DateTime? momentDate,
+    bool landOnSceneDetail = true,
+    int maxSelection = _kDefaultMaxSelection,
+  }) {
     return PageRouteBuilder<List<AssetEntity>?>(
       opaque: true,
       transitionDuration: const Duration(milliseconds: 340),
       reverseTransitionDuration: const Duration(milliseconds: 280),
       pageBuilder: (context, animation, secondaryAnimation) =>
-          PhotoPickerScreen(scene: scene),
+          PhotoPickerScreen(
+        scene: scene,
+        momentDate: momentDate,
+        landOnSceneDetail: landOnSceneDetail,
+        maxSelection: maxSelection,
+      ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -44,11 +88,15 @@ class PhotoPickerScreen extends StatefulWidget {
   }
 
   @override
-  State<PhotoPickerScreen> createState() => _PhotoPickerScreenState();
+  ConsumerState<PhotoPickerScreen> createState() => _PhotoPickerScreenState();
 }
 
-class _PhotoPickerScreenState extends State<PhotoPickerScreen> {
-  static const int _maxSelection = 20;
+class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
+  // picker 성능 상한과 widget.maxSelection(scene의 남은 slot) 중 작은 값.
+  int get _maxSelection => widget.maxSelection.clamp(
+        1,
+        PhotoPickerScreen._kDefaultMaxSelection,
+      );
 
   List<AssetPathEntity> _albums = [];
   AssetPathEntity? _currentAlbum;
@@ -56,8 +104,6 @@ class _PhotoPickerScreenState extends State<PhotoPickerScreen> {
   final List<AssetEntity> _selected = [];
   final Map<String, Uint8List> _thumbCache = {};
   bool _loading = true;
-  bool _saving = false;
-  double _saveProgress = 0;
 
   Future<Uint8List?> _getThumb(AssetEntity asset, int size) async {
     final key = '${asset.id}_$size';
@@ -137,28 +183,34 @@ class _PhotoPickerScreenState extends State<PhotoPickerScreen> {
     setState(() => _selected.remove(asset));
   }
 
-  Future<void> _save() async {
-    if (_selected.isEmpty || _saving) return;
-    setState(() {
-      _saving = true;
-      _saveProgress = 0;
-    });
-    for (int i = 0; i < _selected.length; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      if (!mounted) return;
-      setState(() => _saveProgress = (i + 1) / _selected.length);
-    }
-    if (mounted) {
+  /// 선택된 자산을 글로벌 업로드 큐에 enqueue 후 picker를 즉시 닫고 scene
+  /// detail로 이동. 압축·전송은 [UploadQueueNotifier]가 background로 처리하고
+  /// 진행 상황은 글로벌 [UploadProgressChip]에 표시됨.
+  void _save() {
+    final scene = widget.scene;
+    if (scene == null) {
+      // scene 없이 picker가 열린 legacy 경로 — 그냥 선택만 반환.
       Navigator.of(context).pop(_selected);
-      if (widget.scene != null) {
-        final viewportWidth = MediaQuery.sizeOf(context).width;
-        Navigator.of(context).push(
-          SceneDetailScreen.fadeRoute(
-            scene: widget.scene!,
-            canisterSize: viewportWidth * 0.5,
-          ),
+      return;
+    }
+    if (_selected.isEmpty) return;
+
+    ref.read(uploadQueueProvider.notifier).enqueuePhotos(
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          assets: List.of(_selected),
+          momentDate: widget.momentDate,
         );
-      }
+
+    Navigator.of(context).pop();
+    if (widget.landOnSceneDetail) {
+      final viewportWidth = MediaQuery.sizeOf(context).width;
+      Navigator.of(context).push(
+        SceneDetailScreen.fadeRoute(
+          scene: scene,
+          canisterSize: viewportWidth * 0.5,
+        ),
+      );
     }
   }
 
@@ -342,68 +394,6 @@ class _PhotoPickerScreenState extends State<PhotoPickerScreen> {
             ),
           ),
 
-          // 저장 중 로딩 오버레이
-          if (_saving)
-            Positioned.fill(
-              child: ClipRect(
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                  child: Container(
-                    color: context.colors.background.withValues(alpha: 0.5),
-                    child: Center(
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal:
-                              (MediaQuery.sizeOf(context).width - 120) / 2,
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            ClipRRect(
-                              borderRadius: AppRadii.xsBorder,
-                              child: TweenAnimationBuilder<double>(
-                                tween:
-                                    Tween(begin: 0, end: _saveProgress),
-                                duration:
-                                    const Duration(milliseconds: 280),
-                                curve: Curves.linear,
-                                builder: (context, value, _) {
-                                  return LinearProgressIndicator(
-                                    value: value,
-                                    minHeight: 4,
-                                    backgroundColor: context
-                                        .colors.foreground
-                                        .withValues(alpha: 0.1),
-                                    valueColor:
-                                        AlwaysStoppedAnimation<Color>(
-                                      context.colors.foreground,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              'Uploading...',
-                              style: AppTypography.body(14).copyWith(
-                                color: context.colors.foreground,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${(_saveProgress * _selected.length).ceil()}/${_selected.length}',
-                              style: AppTypography.body(12).copyWith(
-                                color: context.colors.foregroundMuted,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );

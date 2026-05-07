@@ -8,31 +8,37 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../subscription/subscription_screen.dart';
+import '../../subscription/subscription_view_model.dart';
 import '../home_view_model.dart';
 import '../models/scene.dart';
 import 'play_scene_screen.dart';
+import 'scene_title_fallback.dart';
 
 /// 재생할 Scene을 선택하는 바텀시트.
+///
+/// [lockedSceneIds]가 지정되면 scene 선택 영역을 숨기고 그 scene(들)으로
+/// 재생을 고정. scene detail에서 single-scene 재생할 때 사용 — 매체 필터만
+/// 노출.
 class PlaySceneSheet extends ConsumerStatefulWidget {
   const PlaySceneSheet({
     super.key,
     required this.defaultSceneId,
-    this.isSubscribed = false,
+    this.lockedSceneIds,
   });
 
   final String defaultSceneId;
-  final bool isSubscribed;
+  final Set<String>? lockedSceneIds;
 
   static Future<void> show({
     required BuildContext context,
     required String defaultSceneId,
-    bool isSubscribed = false,
+    Set<String>? lockedSceneIds,
   }) {
     return FloatingBottomSheet.show(
       context: context,
       builder: (_) => PlaySceneSheet(
         defaultSceneId: defaultSceneId,
-        isSubscribed: isSubscribed,
+        lockedSceneIds: lockedSceneIds,
       ),
     );
   }
@@ -55,7 +61,7 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
     'place': 'Place',
   };
   static const _mediaIcons = {
-    'photo': FontAwesomeIcons.image,
+    'photo': FontAwesomeIcons.solidImage,
     'film': FontAwesomeIcons.film,
     'music': FontAwesomeIcons.music,
     'place': FontAwesomeIcons.locationDot,
@@ -64,7 +70,20 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedIds.add(widget.defaultSceneId);
+    if (widget.lockedSceneIds != null) {
+      _selectedIds.addAll(widget.lockedSceneIds!);
+    } else {
+      // 포커싱된 scene이 재생 가능한 콘텐츠를 갖고 있을 때만 pre-select.
+      // 콘텐츠가 0개인 scene을 자동 선택하면 표시는 안 되는데(playable 필터에
+      // 빠지므로) 선택은 돼있어 Play 활성/Deselect all 표시 같은 모순 발생.
+      final hasPlayable = ref
+          .read(homeViewModelProvider)
+          .scenes
+          .any((s) => s.id == widget.defaultSceneId && s.media.total > 0);
+      if (hasPlayable) {
+        _selectedIds.add(widget.defaultSceneId);
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scrollToSelected();
     });
@@ -93,8 +112,9 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
   }
 
   void _toggle(String id) {
+    final isSubscribed = ref.read(isSubscribedProvider);
     setState(() {
-      if (widget.isSubscribed) {
+      if (isSubscribed) {
         if (_selectedIds.contains(id)) {
           _selectedIds.remove(id);
         } else {
@@ -112,10 +132,13 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
   Widget build(BuildContext context) {
     final allScenes =
         ref.watch(homeViewModelProvider.select((s) => s.scenes));
+    final isSubscribed = ref.watch(isSubscribedProvider);
     // 재생 가능한 scene = 콘텐츠가 1개 이상 있는 scene.
     final scenes =
         allScenes.where((s) => s.media.total > 0).toList();
     final hasPlayable = scenes.isNotEmpty;
+
+    final showSceneList = widget.lockedSceneIds == null;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -129,6 +152,7 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
           ),
         ),
         const SizedBox(height: 24),
+        if (showSceneList)
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Container(
@@ -162,7 +186,7 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
                       shrinkWrap: true,
                       // Subscribed 사용자에게만 마지막에 "Select All" tile.
                       itemCount:
-                          scenes.length + (widget.isSubscribed ? 1 : 0),
+                          scenes.length + (isSubscribed ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index >= scenes.length) {
                           final allSelected =
@@ -207,7 +231,7 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
           ),
         ),
         // 미디어 필터는 유료(scenes_hd) 회원에게만 노출.
-        if (widget.isSubscribed) ...[
+        if (isSubscribed) ...[
         const SizedBox(height: 14),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -292,7 +316,7 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
         ),
         ],
         // Scenes HD 유도 배너는 free 사용자에게만, play 버튼 바로 위에.
-        if (!widget.isSubscribed) ...[
+        if (!isSubscribed) ...[
           const SizedBox(height: 14),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -318,9 +342,14 @@ class _PlaySceneSheetState extends ConsumerState<PlaySceneSheet> {
                           .scenes
                           .where((s) => _selectedIds.contains(s.id))
                           .toList();
+                      // 시트에서 토글한 매체 필터를 play 화면에 그대로 전달.
+                      final mediaTypes = Set<String>.of(_selectedMediaTypes);
                       Navigator.of(context).pop();
                       Navigator.of(context).push(
-                        PlaySceneScreen.route(scenes: scenes),
+                        PlaySceneScreen.route(
+                          scenes: scenes,
+                          initialMediaTypes: mediaTypes,
+                        ),
                       );
                     },
               child: AnimatedOpacity(
@@ -385,13 +414,14 @@ class _PlaySceneTile extends StatelessWidget {
               child: SizedBox(
                 width: 44,
                 height: 44,
-                child: Image.network(
-                  scene.coverImageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => Container(
-                    color: context.colors.nonClickableArea,
-                  ),
-                ),
+                child: scene.coverImageUrl.isEmpty
+                    ? SceneTitleFallback(title: scene.title)
+                    : Image.network(
+                        scene.coverImageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            SceneTitleFallback(title: scene.title),
+                      ),
               ),
             ),
             const SizedBox(width: 14),

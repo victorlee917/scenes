@@ -25,13 +25,18 @@ class FocusedSceneInfo extends StatelessWidget {
     final localeTag = locale.toLanguageTag();
     final isKo = locale.languageCode == 'ko';
 
+    // 날짜 표시는 콘텐츠가 있을 때만. (콘텐츠가 걸쳐 있는 날짜를 보여주는 게
+    // 의도라서, 콘텐츠 없으면 날짜 자체가 의미 없음.)
+    // TODO: contents wiring 이후 scene.dates 대신 contents의 min/max occurred_at으로 교체.
+    final hasContents = scene.media.total > 0;
     final dateLine = formatSceneDateRange(scene.dates, localeTag);
     final screenWidth = MediaQuery.sizeOf(context).width;
     final titleSize = screenWidth >= 420 ? 30.0 : 26.0;
 
     final mediaColor = context.colors.foreground.withValues(alpha: 0.52);
     final mediaItems = <(FaIconData, int)>[
-      if (scene.media.photos > 0) (FontAwesomeIcons.image, scene.media.photos),
+      if (scene.media.photos > 0)
+        (FontAwesomeIcons.solidImage, scene.media.photos),
       if (scene.media.films > 0) (FontAwesomeIcons.film, scene.media.films),
       if (scene.media.music > 0) (FontAwesomeIcons.music, scene.media.music),
       if (scene.media.places > 0) (FontAwesomeIcons.locationDot, scene.media.places),
@@ -43,6 +48,8 @@ class FocusedSceneInfo extends StatelessWidget {
     );
     final dateText = isKo ? dateLine : dateLine.toUpperCase();
 
+    // 부모가 top-anchor로 # title 위치를 고정. 안의 column은 자연 높이.
+    // → # title은 항상 같은 Y에 표시되고, media/date는 그 아래로 흘러내림.
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
@@ -101,12 +108,14 @@ class FocusedSceneInfo extends StatelessWidget {
               ],
             ),
           ],
-          const SizedBox(height: 12),
-          Text(
-            dateText,
-            textAlign: TextAlign.center,
-            style: dateStyle,
-          ),
+          if (hasContents) ...[
+            const SizedBox(height: 12),
+            Text(
+              dateText,
+              textAlign: TextAlign.center,
+              style: dateStyle,
+            ),
+          ],
         ],
       ),
     );

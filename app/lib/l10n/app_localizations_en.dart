@@ -37,6 +37,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get addSceneCardLabel => 'add new scene';
 
   @override
+  String get homeEmptyTaglinePrefix => 'Keep the ';
+
+  @override
+  String get homeEmptyTaglineBrand => 'Scenes';
+
+  @override
+  String get homeEmptyTaglineSuffix => '\nwe shared together.';
+
+  @override
   String get detailBack => 'Back';
 
   @override
@@ -106,7 +115,63 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDeleteAccount => 'Delete account';
 
   @override
+  String get settingsDangerZone => 'Danger zone';
+
+  @override
+  String get dangerZoneTitle => 'Danger zone';
+
+  @override
+  String get dangerZoneSubtitle => 'Actions in this area can\'t be undone.';
+
+  @override
+  String uploadChipPhotosProgress(int current, int total) {
+    return 'Uploading $current of $total';
+  }
+
+  @override
+  String get uploadChipFilmActive => 'Adding film…';
+
+  @override
+  String get uploadChipMusicActive => 'Adding music…';
+
+  @override
+  String get uploadChipPlaceActive => 'Adding place…';
+
+  @override
+  String uploadChipPhotosDone(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count photos added',
+      one: '1 photo added',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get uploadChipFilmDone => 'Film added';
+
+  @override
+  String get uploadChipMusicDone => 'Music added';
+
+  @override
+  String get uploadChipPlaceDone => 'Place added';
+
+  @override
+  String get uploadChipFailed => 'Upload failed';
+
+  @override
+  String get uploadChipCancelling => 'Cancelling…';
+
+  @override
+  String get profileDeletedUserName => 'Deleted user';
+
+  @override
   String get sceneDetailPlay => 'Play scene';
+
+  @override
+  String get sceneDetailEmptyMedia =>
+      'Fill this Scene with moments that matter.';
 
   @override
   String profileNarrative(
@@ -122,4 +187,38 @@ class AppLocalizationsEn extends AppLocalizations {
   String coupleScenesCount(int count) {
     return '$count Scenes';
   }
+
+  @override
+  String notiPromptTitleWithName(String name) {
+    return 'Don\'t miss\n$name\'s updates';
+  }
+
+  @override
+  String get notiPromptTitleNoName => 'Don\'t miss\na single update';
+
+  @override
+  String notiPromptBodyWithName(String name) {
+    return 'Get notified when $name adds scenes,\nmoments, or reacts to yours.';
+  }
+
+  @override
+  String get notiPromptBodyNoName =>
+      'Get notified when your person adds scenes,\nmoments, or reacts to yours.';
+
+  @override
+  String get notiPromptAllow => 'Allow notifications';
+
+  @override
+  String get notiPromptSkip => 'Maybe later';
+
+  @override
+  String addMediaCapacityLabel(int count, int limit) {
+    return 'Moments $count/$limit';
+  }
+
+  @override
+  String get hdBannerBenefitMedia => 'Unlock films, music, and places.';
+
+  @override
+  String get hdBannerBenefitMoments => 'Up to 100 moments in every scene.';
 }

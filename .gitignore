@@ -6,3 +6,10 @@
 *.p8
 AuthKey_*.p8
 apple_client_secret.txt
+
+# Firebase per-environment config — distribute via secure channel, not git.
+# Contains API_KEY, PROJECT_ID, GCM_SENDER_ID, CLIENT_ID etc. Public exposure
+# can enable quota abuse / unauthorized service usage.
+**/GoogleService-Info.plist
+**/google-services.json
+**/firebase_options.dart

@@ -1,14 +1,21 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
+import '../home/home_view_model.dart';
 import '../home/widgets/detail_app_bar.dart';
+import 'subscription_view_model.dart';
 
 /// Scenes HD 구독 화면.
-class SubscriptionScreen extends StatefulWidget {
+///
+/// 구독 상태는 [subscriptionViewModelProvider]에서 직접 관찰. 호출부에서
+/// 따로 주입하지 않는다.
+class SubscriptionScreen extends ConsumerStatefulWidget {
   const SubscriptionScreen({super.key});
 
   static Route<void> route() {
@@ -18,10 +25,10 @@ class SubscriptionScreen extends StatefulWidget {
   }
 
   @override
-  State<SubscriptionScreen> createState() => _SubscriptionScreenState();
+  ConsumerState<SubscriptionScreen> createState() => _SubscriptionScreenState();
 }
 
-class _SubscriptionScreenState extends State<SubscriptionScreen>
+class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerController;
 
@@ -43,6 +50,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final isSubscribed = ref.watch(isSubscribedProvider);
+    final subscribedBySelf = ref.watch(subscriptionViewModelProvider
+        .select((s) => s.subscribedBySelf));
+    final couple = ref.watch(homeViewModelProvider.select((s) => s.couple));
+    // 구독 라벨에 들어갈 이름. partnerA = 본인, partnerB = 파트너.
+    final subscriberName = subscribedBySelf
+        ? couple.partnerAName
+        : couple.partnerBName;
 
     return Scaffold(
       // backgroundColor handled by theme
@@ -92,15 +107,21 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'Reorder Scenes',
-                    description:
-                        'Arrange your scenes in any order you like.',
-                  ),
-                  const SizedBox(height: 12),
-                  _FeatureCard(
                     title: 'More Media Types',
                     description:
                         'Add films, music, and places to your scenes.',
+                  ),
+                  const SizedBox(height: 12),
+                  _FeatureCard(
+                    title: 'More Moments per Scene',
+                    description:
+                        'Capture up to 100 moments in every scene, instead of 30.',
+                  ),
+                  const SizedBox(height: 12),
+                  _FeatureCard(
+                    title: 'Reorder Scenes',
+                    description:
+                        'Arrange your scenes in any order you like.',
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
@@ -117,9 +138,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   // ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'Scenes Filter',
+                    title: 'Playback Filters',
                     description:
-                        'Apply vintage and mono film looks to your playback.',
+                        'Choose from a range of film looks for your playback.',
                   ),
                   const SizedBox(height: 36),
                   Center(
@@ -140,7 +161,34 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Subscription automatically renews unless canceled at least 24 hours before the end of the current period. You can manage or cancel your subscription in your device settings.',
+                    'Scenes HD is a monthly auto-renewing subscription at \$4.99/month, with a 7-day free trial for new subscribers.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.body(11).copyWith(
+                      color: context.colors.foregroundMuted.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Payment will be charged to your Apple ID account at confirmation of purchase.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.body(11).copyWith(
+                      color: context.colors.foregroundMuted.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period at \$4.99/month.',
+                    textAlign: TextAlign.center,
+                    style: AppTypography.body(11).copyWith(
+                      color: context.colors.foregroundMuted.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'You can manage or cancel your subscription in your App Store account settings after purchase. Any unused portion of a free trial will be forfeited when you start a paid subscription.',
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -187,73 +235,69 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                       alignment: Alignment.topCenter,
                       children: [
                         GestureDetector(
-                          onTap: () {
-                            // 구독 결제. UI는 추후.
-                          },
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            decoration: BoxDecoration(
-                              borderRadius: AppRadii.mdBorder,
-                              color: context.colors.foreground,
-                            ),
-                            alignment: Alignment.center,
-                            child: Text(
-                              'Subscribe for \$4.99/mo',
-                              style: AppTypography.body(
-                                15,
-                                weight: FontWeight.w600,
-                              ).copyWith(color: context.colors.background),
-                            ),
+                          onTap: isSubscribed
+                              ? null
+                              : () {
+                                  // 구독 결제. UI는 추후.
+                                },
+                          child: _SubscriptionPrimaryButton(
+                            isSubscribed: isSubscribed,
+                            label: isSubscribed
+                                ? (subscriberName.isEmpty
+                                    ? 'Subscribed'
+                                    : 'Thanks to $subscriberName')
+                                : 'Subscribe for \$4.99/mo',
                           ),
                         ),
-                        Positioned(
-                          top: -12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: context.colors.background,
-                              borderRadius: AppRadii.smBorder,
-                              border: Border.all(
-                                color: context.colors.foreground
-                                    .withValues(alpha: 0.15),
-                                width: 0.5,
+                        if (!isSubscribed)
+                          Positioned(
+                            top: -12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 4,
                               ),
-                            ),
-                            child: AnimatedBuilder(
-                              animation: _shimmerController,
-                              builder: (context, child) {
-                                return ShaderMask(
-                                  shaderCallback: (bounds) {
-                                    final dx =
-                                        _shimmerController.value * 3 - 1;
-                                    return LinearGradient(
-                                      begin: Alignment(dx, 0),
-                                      end: Alignment(dx + 0.6, 0),
-                                      colors: const [
-                                        Color(0xFF888886),
-                                        Color(0xFFFFFFFF),
-                                        Color(0xFF888886),
-                                      ],
-                                      stops: const [0.0, 0.5, 1.0],
-                                    ).createShader(bounds);
-                                  },
-                                  blendMode: BlendMode.srcIn,
-                                  child: child,
-                                );
-                              },
-                              child: Text(
-                                'Free for 7 days',
-                                style: AppTypography.body(11,
-                                        weight: FontWeight.w500)
-                                    .copyWith(color: context.colors.foreground),
+                              decoration: BoxDecoration(
+                                color: context.colors.background,
+                                borderRadius: AppRadii.smBorder,
+                                border: Border.all(
+                                  color: context.colors.foreground
+                                      .withValues(alpha: 0.15),
+                                  width: 0.5,
+                                ),
+                              ),
+                              child: AnimatedBuilder(
+                                animation: _shimmerController,
+                                builder: (context, child) {
+                                  return ShaderMask(
+                                    shaderCallback: (bounds) {
+                                      final dx =
+                                          _shimmerController.value * 3 - 1;
+                                      return LinearGradient(
+                                        begin: Alignment(dx, 0),
+                                        end: Alignment(dx + 0.6, 0),
+                                        colors: const [
+                                          Color(0xFF888886),
+                                          Color(0xFFFFFFFF),
+                                          Color(0xFF888886),
+                                        ],
+                                        stops: const [0.0, 0.5, 1.0],
+                                      ).createShader(bounds);
+                                    },
+                                    blendMode: BlendMode.srcIn,
+                                    child: child,
+                                  );
+                                },
+                                child: Text(
+                                  'Free for 7 days',
+                                  style: AppTypography.body(11,
+                                          weight: FontWeight.w500)
+                                      .copyWith(
+                                          color: context.colors.foreground),
+                                ),
                               ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -272,6 +316,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
                           ),
                         ),
                       ),
+                      if (!isSubscribed) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            '·',
+                            style: AppTypography.body(12).copyWith(
+                              color: context.colors.foregroundMuted,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () {
+                            // TODO: RevenueCat / StoreKit restorePurchases 호출.
+                          },
+                          child: Text(
+                            'Restore',
+                            style: AppTypography.body(12).copyWith(
+                              color: context.colors.foregroundMuted,
+                            ),
+                          ),
+                        ),
+                      ],
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: Text(
@@ -328,6 +394,67 @@ class _SubscriptionScreenState extends State<SubscriptionScreen>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 하단 primary 버튼.
+///
+/// 구독 전: solid foreground CTA. 구독 후: glass-morphism 톤(BackdropFilter
+/// blur + 낮은 alpha 흰색 틴트). 코드베이스 공통 glass 톤(`glass_circle_button`)
+/// 과 sigma·alpha를 동일하게 맞춰 다른 frosted UI와 일관되게 보이게 한다.
+class _SubscriptionPrimaryButton extends StatelessWidget {
+  const _SubscriptionPrimaryButton({
+    required this.isSubscribed,
+    required this.label,
+  });
+
+  final bool isSubscribed;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      label,
+      style: AppTypography.body(15, weight: FontWeight.w600).copyWith(
+        color: isSubscribed
+            ? context.colors.foregroundMuted
+            : context.colors.background,
+      ),
+    );
+
+    if (!isSubscribed) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          borderRadius: AppRadii.mdBorder,
+          color: context.colors.foreground,
+        ),
+        alignment: Alignment.center,
+        child: text,
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: AppRadii.mdBorder,
+      child: BackdropFilter(
+        filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            borderRadius: AppRadii.mdBorder,
+            color: context.colors.foreground.withValues(alpha: 0.06),
+            border: Border.all(
+              color: context.colors.foreground.withValues(alpha: 0.10),
+              width: 0.6,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: text,
+        ),
       ),
     );
   }

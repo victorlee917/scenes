@@ -37,6 +37,15 @@ class AppLocalizationsKo extends AppLocalizations {
   String get addSceneCardLabel => '새 Scene 추가';
 
   @override
+  String get homeEmptyTaglinePrefix => '우리가 함께 한 ';
+
+  @override
+  String get homeEmptyTaglineBrand => 'Scene';
+
+  @override
+  String get homeEmptyTaglineSuffix => '을\n간직해 보세요.';
+
+  @override
   String get detailBack => '뒤로';
 
   @override
@@ -106,7 +115,56 @@ class AppLocalizationsKo extends AppLocalizations {
   String get settingsDeleteAccount => '탈퇴';
 
   @override
+  String get settingsDangerZone => '위험 구역';
+
+  @override
+  String get dangerZoneTitle => '위험 구역';
+
+  @override
+  String get dangerZoneSubtitle => '이 영역의 작업은 되돌릴 수 없습니다.';
+
+  @override
+  String uploadChipPhotosProgress(int current, int total) {
+    return '$current / $total 업로드 중';
+  }
+
+  @override
+  String get uploadChipFilmActive => '영화 추가 중…';
+
+  @override
+  String get uploadChipMusicActive => '음악 추가 중…';
+
+  @override
+  String get uploadChipPlaceActive => '장소 추가 중…';
+
+  @override
+  String uploadChipPhotosDone(int count) {
+    return '사진 $count장 추가됨';
+  }
+
+  @override
+  String get uploadChipFilmDone => '영화 추가됨';
+
+  @override
+  String get uploadChipMusicDone => '음악 추가됨';
+
+  @override
+  String get uploadChipPlaceDone => '장소 추가됨';
+
+  @override
+  String get uploadChipFailed => '업로드 실패';
+
+  @override
+  String get uploadChipCancelling => '취소 중…';
+
+  @override
+  String get profileDeletedUserName => '탈퇴한 사용자';
+
+  @override
   String get sceneDetailPlay => '씬 재생';
+
+  @override
+  String get sceneDetailEmptyMedia => 'Scene을 소중한 순간들로 채워 보세요';
 
   @override
   String profileNarrative(
@@ -122,4 +180,37 @@ class AppLocalizationsKo extends AppLocalizations {
   String coupleScenesCount(int count) {
     return '$count Scenes';
   }
+
+  @override
+  String notiPromptTitleWithName(String name) {
+    return '$name님의 소식을\n놓치지 마세요';
+  }
+
+  @override
+  String get notiPromptTitleNoName => '소중한 소식을\n놓치지 마세요';
+
+  @override
+  String notiPromptBodyWithName(String name) {
+    return '$name님이 새로운 Scene을 추가하거나\n반응을 남길 때 알려드릴게요.';
+  }
+
+  @override
+  String get notiPromptBodyNoName => '파트너가 새로운 Scene을 추가하거나\n반응을 남길 때 알려드릴게요.';
+
+  @override
+  String get notiPromptAllow => '알림 허용';
+
+  @override
+  String get notiPromptSkip => '나중에 하기';
+
+  @override
+  String addMediaCapacityLabel(int count, int limit) {
+    return '모먼트 $count/$limit';
+  }
+
+  @override
+  String get hdBannerBenefitMedia => '영화, 음악, 장소까지 담아보세요.';
+
+  @override
+  String get hdBannerBenefitMoments => '한 Scene에 모먼트를 100개까지.';
 }

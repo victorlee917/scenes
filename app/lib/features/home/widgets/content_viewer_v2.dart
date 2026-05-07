@@ -1,153 +1,58 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
-
-// TODO: project rule says no external API keys in client — migrate map
-// previews to an Edge Function (e.g., `mapbox-static-cache`). For dev, pass
-// the token via `flutter run --dart-define=MAPBOX_TOKEN=...`.
-const _mapboxToken = String.fromEnvironment('MAPBOX_TOKEN');
+import '../../../core/widgets/app_toast.dart';
+import '../../../core/widgets/confirm_dialog.dart';
+import '../../../core/widgets/floating_action_sheet.dart';
+import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../content/contents_view_model.dart';
+import '../../content/data/content_repository.dart';
+import '../../content/likes_view_model.dart';
+import '../../content/models/content.dart';
+import '../../content/widgets/moment_date_picker_sheet.dart';
+import '../../content/widgets/source_badge.dart';
+import '../../couple/couple_view_model.dart';
+import '../../profile/profile_view_model.dart';
+import '../../scene/scenes_view_model.dart';
+import '../../../l10n/app_localizations.dart';
+import 'scene_title_fallback.dart';
 
 /// 콘텐츠 뷰어 v2.
 ///
 /// 레이아웃: 앱바 → 콘텐츠 박스 → 정보+좋아요 → 가로 dial.
-class ContentViewerV2 extends StatefulWidget {
+/// 모든 메타데이터는 [contents] 리스트의 각 Content.payload에서 직접 derive.
+class ContentViewerV2 extends ConsumerStatefulWidget {
   const ContentViewerV2({
     super.key,
-    required this.totalCount,
+    required this.contents,
     required this.initialIndex,
     this.sceneImageUrl,
     this.sceneName,
-    this.uploaderName,
-    this.mediaTypes = const [],
     this.uploadedAt,
-    this.capturedAt,
-    this.capturedLocation,
-    this.photoWidth,
-    this.photoHeight,
-    this.filmTitle,
-    this.filmReleaseDate,
-    this.filmDirector,
-    this.filmKind,
-    this.filmGenres,
-    this.filmRuntimeMinutes,
-    this.musicKind,
-    this.musicTitle,
-    this.musicArtist,
-    this.musicAlbum,
-    this.musicReleaseDate,
-    this.placeName,
-    this.placeAddress,
-    this.placeCategory,
-    this.placeRegion,
-    this.placeLat,
-    this.placeLng,
   });
 
-  final int totalCount;
+  /// 표시할 contents — type/payload/signed URL 모두 여기서 읽음.
+  final List<Content> contents;
   final int initialIndex;
   final String? sceneImageUrl;
   final String? sceneName;
-  final String? uploaderName;
-  final List<String> mediaTypes;
   final DateTime? uploadedAt;
-
-  /// Photo-only meta (current index): EXIF capture timestamp.
-  final DateTime? capturedAt;
-
-  /// Photo-only meta (current index): human-readable location.
-  final String? capturedLocation;
-
-  /// Photo-only meta (current index): pixel dimensions.
-  final int? photoWidth;
-  final int? photoHeight;
-
-  /// Film-only meta (current index).
-  final String? filmTitle;
-  final DateTime? filmReleaseDate;
-  final String? filmDirector;
-
-  /// `'movie'` or `'series'`. Defaults to a mock value when null.
-  final String? filmKind;
-
-  /// Film genre tags, displayed as `Drama / Romance / ...` in the metadata.
-  final List<String>? filmGenres;
-
-  /// Runtime in minutes (e.g., 132 → "132 min").
-  final int? filmRuntimeMinutes;
-
-  /// `'track'` or `'album'`. Track shows parent album in metadata; album
-  /// skips the album line.
-  final String? musicKind;
-
-  /// Track or album title — whichever fits the [musicKind].
-  final String? musicTitle;
-
-  final String? musicArtist;
-
-  /// Parent album for a track. Ignored when [musicKind] is `'album'`.
-  final String? musicAlbum;
-
-  final DateTime? musicReleaseDate;
-
-  /// MapBox 기반 장소 메타.
-  final String? placeName;
-
-  /// 풀 주소 (예: "Tokyo Tower, 4-2-8 Shibakoen, Minato City").
-  final String? placeAddress;
-
-  /// POI 카테고리 (예: "Cafe", "Park", "Restaurant"). MapBox `category`.
-  final String? placeCategory;
-
-  /// 도시·국가 같은 상위 지역 컨텍스트 (예: "Seoul, Korea").
-  final String? placeRegion;
-
-  /// 위·경도 (메타에 표시할지 결정 필요).
-  final double? placeLat;
-  final double? placeLng;
-
-  String mediaTypeAt(int index) =>
-      index < mediaTypes.length ? mediaTypes[index] : 'photo';
 
   static Future<void> show({
     required BuildContext context,
-    required int totalCount,
+    required List<Content> contents,
     required int initialIndex,
     String? sceneImageUrl,
     String? sceneName,
-    String? uploaderName,
-    List<String> mediaTypes = const [],
     DateTime? uploadedAt,
-    DateTime? capturedAt,
-    String? capturedLocation,
-    int? photoWidth,
-    int? photoHeight,
-    String? filmTitle,
-    DateTime? filmReleaseDate,
-    String? filmDirector,
-    String? filmKind,
-    List<String>? filmGenres,
-    int? filmRuntimeMinutes,
-    String? musicKind,
-    String? musicTitle,
-    String? musicArtist,
-    String? musicAlbum,
-    DateTime? musicReleaseDate,
-    String? placeName,
-    String? placeAddress,
-    String? placeCategory,
-    String? placeRegion,
-    double? placeLat,
-    double? placeLng,
   }) {
     return Navigator.of(context).push(
       PageRouteBuilder<void>(
@@ -156,34 +61,11 @@ class ContentViewerV2 extends StatefulWidget {
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) =>
             ContentViewerV2(
-          totalCount: totalCount,
+          contents: contents,
           initialIndex: initialIndex,
           sceneImageUrl: sceneImageUrl,
           sceneName: sceneName,
-          uploaderName: uploaderName,
-          mediaTypes: mediaTypes,
           uploadedAt: uploadedAt,
-          capturedAt: capturedAt,
-          capturedLocation: capturedLocation,
-          photoWidth: photoWidth,
-          photoHeight: photoHeight,
-          filmTitle: filmTitle,
-          filmReleaseDate: filmReleaseDate,
-          filmDirector: filmDirector,
-          filmKind: filmKind,
-          filmGenres: filmGenres,
-          filmRuntimeMinutes: filmRuntimeMinutes,
-          musicKind: musicKind,
-          musicTitle: musicTitle,
-          musicArtist: musicArtist,
-          musicAlbum: musicAlbum,
-          musicReleaseDate: musicReleaseDate,
-          placeName: placeName,
-          placeAddress: placeAddress,
-          placeCategory: placeCategory,
-          placeRegion: placeRegion,
-          placeLat: placeLat,
-          placeLng: placeLng,
         ),
         transitionsBuilder:
             (context, animation, secondaryAnimation, child) {
@@ -204,138 +86,218 @@ class ContentViewerV2 extends StatefulWidget {
   }
 
   @override
-  State<ContentViewerV2> createState() => _ContentViewerV2State();
+  ConsumerState<ContentViewerV2> createState() => _ContentViewerV2State();
 }
 
-class _ContentViewerV2State extends State<ContentViewerV2> {
+class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
   late int _currentIndex;
-  bool _liked = false;
+  // 삭제 시 widget.contents가 아닌 local mutable 리스트를 갱신해 viewer가
+  // 즉시 다음/이전 콘텐츠를 표시할 수 있게.
+  late List<Content> _contents;
   bool _showInfo = false;
+  // 시각 효과(translate/scale/opacity/radius)에 쓰이는 "초과분" 오프셋.
+  // 사용자가 _dragDeadband를 넘어 당겨야 0보다 커진다.
   double _dragOffset = 0;
+  // 누적 raw drag dy. 데드밴드 판정용 — 손가락 이동량 자체.
+  double _dragRaw = 0;
   bool _dragging = false;
+  // 처음 이만큼은 시각적으로 반응하지 않음 — 의도되지 않은 미세 스크롤이
+  // 화면을 흐리게 만드는 걸 방지.
+  static const double _dragDeadband = 60;
 
   @override
   void initState() {
     super.initState();
+    _contents = List.of(widget.contents);
     _currentIndex = widget.initialIndex;
   }
 
-  String get _currentMediaType => widget.mediaTypeAt(_currentIndex);
+  /// 현재 표시 중인 Content. payload에서 type별 메타를 derive할 때 시작점.
+  Content get _current => _contents[_currentIndex];
 
-  /// Downloads the current content's image and opens the OS share sheet,
-  /// which on iOS/Android includes "Save to Photos" / "Save to Files" along
-  /// with sharing to other apps. Currently scoped to photo content; other
-  /// types fall back to a no-op until we wire up film/music/place sharing.
-  Future<void> _shareCurrent() async {
-    if (_currentMediaType != 'photo') {
-      // TODO: support film / music / place share via metadata or external URL.
-      return;
-    }
-    final url = _contentImageUrl();
-    Directory? tempDir;
+  String get _currentMediaType => _current.type;
+
+  /// likes provider key — 모든 contents가 같은 scene에 속한다는 가정 하에
+  /// 현재 콘텐츠의 sceneId 사용.
+  String get _sceneId => _current.sceneId;
+
+  Future<void> _toggleLike() async {
+    HapticFeedback.selectionClick();
     try {
-      final response = await http.get(Uri.parse(url));
-      if (response.statusCode != 200) return;
-      tempDir = await Directory.systemTemp.createTemp('scene_share_');
-      final file = File('${tempDir.path}/photo_$_currentIndex.jpg');
-      await file.writeAsBytes(response.bodyBytes);
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [XFile(file.path, mimeType: 'image/jpeg')],
-          subject: widget.sceneName,
-        ),
-      );
+      await ref
+          .read(myLikesForSceneProvider(_sceneId).notifier)
+          .toggle(_current.id);
     } catch (_) {
-      // Silently swallow for now; could surface a snackbar.
-    } finally {
-      // Clean up the temp directory after the share sheet flow.
-      if (tempDir != null && tempDir.existsSync()) {
-        try {
-          tempDir.deleteSync(recursive: true);
-        } catch (_) {}
-      }
+      if (mounted) AppToast.show(context, 'Failed to update like.');
     }
   }
 
-  String _contentImageUrl() {
-    switch (_currentMediaType) {
-      case 'film':
-        return 'https://picsum.photos/seed/film-$_currentIndex/300/450';
-      case 'music':
-        return 'https://picsum.photos/seed/music-$_currentIndex/300/300';
-      case 'place':
-        // 실제 데이터 연결 전 dev placeholder. 운영에선 mapbox-static-cache
-        // Edge Function이 생성·캐싱한 정적 지도 이미지(scene_media 버킷의
-        // signed URL)로 교체된다.
-        return 'https://picsum.photos/seed/place-$_currentIndex/800/600';
-      default:
-        return _currentIndex.isEven
-            ? 'https://picsum.photos/seed/content-$_currentIndex/1200/800'
-            : 'https://picsum.photos/seed/content-$_currentIndex/800/1200';
-    }
+  /// 본인이 올린 콘텐츠인지. 작성자만 ellipsis 메뉴 / 삭제 / moment date 수정
+  /// 탭이 활성화. 권한 자체는 RLS가 강제하므로 이 체크는 UX용.
+  bool get _canDelete {
+    final myId = ref.read(myProfileProvider).valueOrNull?.id;
+    return myId != null && myId == _current.createdBy;
   }
+
+  /// 현재 콘텐츠의 작성자 표시 이름.
+  ///
+  /// `created_by` UUID를 본인/파트너 프로필로 매핑:
+  /// - 본인 = `myProfileProvider`의 이름 그대로
+  /// - 파트너 = `activeCouple.partner.name`. 파트너가 탈퇴 상태(deletedAt != null)
+  ///   이면 l10n `profileDeletedUserName`으로 마스킹
+  /// - 어느 쪽에도 매핑 안 되면 null (예: 옛 파트너의 콘텐츠인데 active couple
+  ///   이 다른 사람이거나, 데이터가 stale한 경우 등) — UI에서 빈 행 처리.
+  String? _resolveUploaderName(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final myProfile = ref.watch(myProfileProvider).valueOrNull;
+    final activeCouple = ref.watch(activeCoupleProvider).valueOrNull;
+    final createdBy = _current.createdBy;
+    if (createdBy == null) return null;
+    if (myProfile != null && myProfile.id == createdBy) {
+      return myProfile.isDeleted ? l10n.profileDeletedUserName : myProfile.name;
+    }
+    final partner = activeCouple?.partner;
+    if (partner != null && partner.id == createdBy) {
+      return partner.isDeleted ? l10n.profileDeletedUserName : partner.name;
+    }
+    return null;
+  }
+
+  /// 작성자가 occurred_at(moment date) 사후 수정. 시트에서 confirm하면 repo
+  /// update + local _contents + provider state 모두 갱신해 viewer/그리드가
+  /// 즉시 반영. delete와 비슷한 흐름이지만 row를 보존한 채 필드만 교체.
+  void _showMomentDatePicker() {
+    if (!_canDelete) return;
+    final initial = _current.occurredAt ?? _current.createdAt;
+    final contentToEdit = _current;
+    FloatingBottomSheet.show(
+      context: context,
+      builder: (_) => MomentDatePickerSheet(
+        initialDate: initial,
+        onConfirm: (date) async {
+          Navigator.of(context).pop();
+          try {
+            await ref
+                .read(contentRepositoryProvider)
+                .updateOccurredAt(contentToEdit.id, date);
+            if (!mounted) return;
+            final updated = contentToEdit.copyWith(occurredAt: date);
+            // 1) viewer local state.
+            setState(() {
+              _contents = _contents
+                  .map((c) => c.id == updated.id ? updated : c)
+                  .toList(growable: false);
+            });
+            // 2) scene detail 그리드 watch가 보는 provider 동기화.
+            ref
+                .read(contentsForSceneProvider(_sceneId).notifier)
+                .replaceContent(updated);
+          } catch (_) {
+            if (!mounted) return;
+            AppToast.show(context, 'Failed to update date.');
+          }
+        },
+      ),
+    );
+  }
+
+  void _handleMoreActions() {
+    FloatingActionSheet.show(
+      context: context,
+      items: [
+        FloatingActionItem(
+          label: 'Delete',
+          isDestructive: true,
+          onTap: () async {
+            final removingIndex = _currentIndex;
+            final contentId = _current.id;
+            final sceneId = _sceneId;
+            final confirmed = await ConfirmDialog.show(
+              context: context,
+              title: 'Delete this moment?',
+              message: 'It will be removed from this scene.',
+              confirmLabel: 'Delete',
+              isDestructive: true,
+            );
+            if (!confirmed || !mounted) return;
+            try {
+              await ref
+                  .read(contentRepositoryProvider)
+                  .deleteContent(contentId);
+              if (!mounted) return;
+              // contents 리스트에서 즉시 제거 — scene detail 그리드 watch가
+              // 이 변화를 받아 그리드 셀이 빠짐.
+              ref
+                  .read(contentsForSceneProvider(sceneId).notifier)
+                  .removeContent(contentId);
+              // scene_summary 뷰의 media count badge가 stale로 안 남게
+              // scenesProvider도 동기 refresh — 다른 화면(홈/리스트) 모두
+              // 즉시 반영.
+              await ref.read(scenesProvider.notifier).softRefresh();
+              if (!mounted) return;
+
+              // viewer 자체는 유지 — 이전 인덱스로 이동(없으면 다음, 둘 다
+              // 없으면 pop). _contents는 삭제된 row 빠진 새 list로 교체.
+              final newList = List.of(_contents)..removeAt(removingIndex);
+              if (newList.isEmpty) {
+                Navigator.of(context).pop();
+                return;
+              }
+              setState(() {
+                _contents = newList;
+                _currentIndex =
+                    removingIndex > 0 ? removingIndex - 1 : 0;
+                _showInfo = false;
+              });
+            } catch (e) {
+              if (!mounted) return;
+              AppToast.show(context, 'Failed to delete.');
+            }
+          },
+        ),
+      ],
+    );
+  }
+
+  /// 현재 콘텐츠의 메인 표시 URL. photo는 full size, film은 cached poster,
+  /// music은 Spotify CDN, place는 cached static map. 모두 ContentRepository
+  /// 가 fullSignedUrl 슬롯에 채워둠.
+  String _contentImageUrl() => _current.fullSignedUrl ?? '';
 
   Widget _buildContent(BuildContext context) {
-    final infoOverlay = _showInfo
-        ? _ContentInfo(
-            mediaType: _currentMediaType,
-            index: _currentIndex,
-            capturedAt: widget.capturedAt,
-            capturedLocation: widget.capturedLocation,
-            photoWidth: widget.photoWidth,
-            photoHeight: widget.photoHeight,
-            filmTitle: widget.filmTitle,
-            filmReleaseDate: widget.filmReleaseDate,
-            filmDirector: widget.filmDirector,
-            filmKind: widget.filmKind,
-            filmGenres: widget.filmGenres,
-            filmRuntimeMinutes: widget.filmRuntimeMinutes,
-            musicKind: widget.musicKind,
-            musicTitle: widget.musicTitle,
-            musicArtist: widget.musicArtist,
-            musicAlbum: widget.musicAlbum,
-            musicReleaseDate: widget.musicReleaseDate,
-            placeName: widget.placeName,
-            placeAddress: widget.placeAddress,
-            placeCategory: widget.placeCategory,
-            placeRegion: widget.placeRegion,
-            placeLat: widget.placeLat,
-            placeLng: widget.placeLng,
-          )
-        : null;
+    final infoOverlay = _showInfo ? _ContentInfo(content: _current) : null;
+    final url = _contentImageUrl();
+    final payload = _current.payload;
 
-    if (_currentMediaType == 'film') {
-      return _FilmContentCard(
-        index: _currentIndex,
-        posterUrl: _contentImageUrl(),
-        title: widget.filmTitle,
-        director: widget.filmDirector,
-        imageOverlay: infoOverlay,
-      );
+    switch (_currentMediaType) {
+      case 'film':
+        return _FilmContentCard(
+          posterUrl: url,
+          title: payload['title'] as String?,
+          director: payload['director'] as String?,
+          imageOverlay: infoOverlay,
+        );
+      case 'music':
+        return _MusicContentCard(
+          albumArtUrl: url,
+          title: payload['title'] as String?,
+          artist: payload['artist'] as String?,
+          imageOverlay: infoOverlay,
+        );
+      case 'place':
+        return _PlaceContentCard(
+          mapImageUrl: url,
+          name: payload['name'] as String?,
+          address: payload['address'] as String?,
+          imageOverlay: infoOverlay,
+        );
+      default:
+        return _ContentImage(
+          url: url,
+          index: _currentIndex,
+          overlay: infoOverlay,
+        );
     }
-    if (_currentMediaType == 'music') {
-      return _MusicContentCard(
-        index: _currentIndex,
-        albumArtUrl: _contentImageUrl(),
-        title: widget.musicTitle,
-        artist: widget.musicArtist,
-        imageOverlay: infoOverlay,
-      );
-    }
-    if (_currentMediaType == 'place') {
-      return _PlaceContentCard(
-        index: _currentIndex,
-        mapImageUrl: _contentImageUrl(),
-        name: widget.placeName,
-        address: widget.placeAddress,
-        imageOverlay: infoOverlay,
-      );
-    }
-    return _ContentImage(
-      url: _contentImageUrl(),
-      index: _currentIndex,
-      overlay: infoOverlay,
-    );
   }
 
   /// 이미지 위에 깔리는 dim + meta 컨테이너. 각 콘텐츠 위젯이 이미지 영역
@@ -349,21 +311,28 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
   }
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
-    if (details.delta.dy > 0 || _dragOffset > 0) {
+    if (details.delta.dy > 0 || _dragRaw > 0) {
       setState(() {
         _dragging = true;
-        _dragOffset = (_dragOffset + details.delta.dy).clamp(0.0, 400.0);
+        _dragRaw = (_dragRaw + details.delta.dy)
+            .clamp(0.0, _dragDeadband + 400.0);
+        _dragOffset = (_dragRaw - _dragDeadband).clamp(0.0, 400.0);
       });
     }
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
-    if (_dragOffset > 120 ||
-        (details.primaryVelocity != null && details.primaryVelocity! > 800)) {
+    // 빠른 flick은 데드밴드를 분명히 넘긴 경우에만 pop으로 인정 — 짧은
+    // 우연의 plus-flick으로 화면이 닫히지 않도록.
+    final fastFlick = _dragOffset > 0 &&
+        details.primaryVelocity != null &&
+        details.primaryVelocity! > 800;
+    if (_dragOffset > 120 || fastFlick) {
       Navigator.of(context).pop();
     } else {
       setState(() {
         _dragging = false;
+        _dragRaw = 0;
         _dragOffset = 0;
       });
     }
@@ -401,23 +370,28 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                // 좌: 캐니스터 사진 + 제목 + 매체
-                if (widget.sceneImageUrl != null)
-                  ClipOval(
-                    child: SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: Image.network(
-                        widget.sceneImageUrl!,
+                // 좌: 캐니스터 사진 + 제목 + 매체. 홈/picker와 동일하게
+                // cover URL 없거나 로드 실패 시 타이틀 첫 글자 fallback.
+                ClipOval(
+                  child: SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: () {
+                      final url = widget.sceneImageUrl;
+                      final title = widget.sceneName ?? '';
+                      if (url == null || url.isEmpty) {
+                        return SceneTitleFallback(title: title);
+                      }
+                      return Image.network(
+                        url,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Container(
-                          color: context.colors.nonClickableArea,
-                        ),
-                      ),
-                    ),
+                        errorBuilder: (_, _, _) =>
+                            SceneTitleFallback(title: title),
+                      );
+                    }(),
                   ),
-                if (widget.sceneImageUrl != null)
-                  const SizedBox(width: 10),
+                ),
+                const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -436,55 +410,64 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
                   ],
                 ),
                 const Spacer(),
-                // 우: 인덱스 · X pill
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: BackdropFilter(
-                      filter:
-                          ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: context.colors.foreground
-                              .withValues(alpha: 0.06),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${_currentIndex + 1}/${widget.totalCount}',
+                // 우: 인덱스 · X pill. 인덱스 영역은 비활성, X 아이콘 영역만
+                // 누르면 닫힘. (실수 탭으로 viewer가 사라지는 경우 방지)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: BackdropFilter(
+                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      decoration: BoxDecoration(
+                        color: context.colors.foreground
+                            .withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12),
+                            child: Text(
+                              '${_currentIndex + 1}/${_contents.length}',
                               style: AppTypography.body(11).copyWith(
                                 color: context.colors.foreground
                                     .withValues(alpha: 0.9),
                               ),
                             ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8),
-                              child: Container(
-                                width: 3,
-                                height: 3,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: context.colors.foreground
-                                      .withValues(alpha: 0.3),
-                                ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8),
+                            child: Container(
+                              width: 3,
+                              height: 3,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: context.colors.foreground
+                                    .withValues(alpha: 0.3),
                               ),
                             ),
-                            FaIcon(
-                              FontAwesomeIcons.xmark,
-                              size: 11,
-                              color: context.colors.foreground
-                                  .withValues(alpha: 0.6),
+                          ),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => Navigator.of(context).pop(),
+                            child: Padding(
+                              padding: const EdgeInsets.only(
+                                left: 4,
+                                right: 12,
+                                top: 4,
+                                bottom: 4,
+                              ),
+                              child: FaIcon(
+                                FontAwesomeIcons.xmark,
+                                size: 11,
+                                color: context.colors.foreground
+                                    .withValues(alpha: 0.6),
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -496,35 +479,68 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
           const SizedBox(height: 16),
 
           // ── 콘텐츠 박스 ────────────────────────────────────
+          // outer: 콘텐츠 *바깥* 영역 탭 → 좌/우 절반 기준으로 인덱스 이동.
+          //        가로 스와이프도 outer가 처리.
+          // inner: 콘텐츠 자체를 탭하면 메타 정보 토글. opaque로 inner 영역
+          //        터치는 outer까지 안 흘러내려간다.
           Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _showInfo = !_showInfo),
-              onHorizontalDragEnd: (details) {
-                final velocity = details.primaryVelocity ?? 0;
-                if (velocity < -300 && _currentIndex < widget.totalCount - 1) {
-                  setState(() {
-                    _currentIndex++;
-                    _showInfo = false;
-                  });
-                  HapticFeedback.selectionClick();
-                } else if (velocity > 300 && _currentIndex > 0) {
-                  setState(() {
-                    _currentIndex--;
-                    _showInfo = false;
-                  });
-                  HapticFeedback.selectionClick();
-                }
-              },
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 500),
-                    child: _buildContent(context),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final halfWidth = constraints.maxWidth / 2;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapUp: (details) {
+                    if (details.localPosition.dx < halfWidth) {
+                      if (_currentIndex > 0) {
+                        setState(() {
+                          _currentIndex--;
+                          _showInfo = false;
+                        });
+                        HapticFeedback.selectionClick();
+                      }
+                    } else {
+                      if (_currentIndex < _contents.length - 1) {
+                        setState(() {
+                          _currentIndex++;
+                          _showInfo = false;
+                        });
+                        HapticFeedback.selectionClick();
+                      }
+                    }
+                  },
+                  onHorizontalDragEnd: (details) {
+                    final velocity = details.primaryVelocity ?? 0;
+                    if (velocity < -300 &&
+                        _currentIndex < _contents.length - 1) {
+                      setState(() {
+                        _currentIndex++;
+                        _showInfo = false;
+                      });
+                      HapticFeedback.selectionClick();
+                    } else if (velocity > 300 && _currentIndex > 0) {
+                      setState(() {
+                        _currentIndex--;
+                        _showInfo = false;
+                      });
+                      HapticFeedback.selectionClick();
+                    }
+                  },
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 500),
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () =>
+                              setState(() => _showInfo = !_showInfo),
+                          child: _buildContent(context),
+                        ),
+                      ),
+                    ),
                   ),
-                ),
-              ),
+                );
+              },
             ),
           ),
 
@@ -539,60 +555,88 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (widget.uploaderName != null)
-                        Text(
-                          widget.uploaderName!,
+                      Builder(builder: (ctx) {
+                        // 현재 콘텐츠 작성자 이름. created_by를 본인/파트너
+                        // 프로필로 매핑하고, 탈퇴된 파트너면 l10n 라벨로
+                        // 마스킹. partner profile은 active couple에서만 로드
+                        // 되므로 abandoned 케이스는 archive UI 도입 전엔 도달
+                        // 불가지만 future-proof 마스킹 적용.
+                        final name = _resolveUploaderName(ctx);
+                        if (name == null || name.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Text(
+                          name,
                           style: AppTypography.body(14,
                                   weight: FontWeight.w500)
-                              .copyWith(
-                                  color: context.colors.foreground),
-                        ),
+                              .copyWith(color: context.colors.foreground),
+                        );
+                      }),
                       const SizedBox(height: 2),
-                      Text(
-                        widget.uploadedAt != null
-                            ? DateFormat.yMMMMd('en')
-                                .format(widget.uploadedAt!)
-                            : '',
-                        style: AppTypography.body(12).copyWith(
-                          color: context.colors.foregroundMuted,
+                      // occurredAt(촬영/방문 시점) 우선, 없으면 createdAt
+                      // (콘텐츠가 scene에 추가된 시점)으로 fallback. photo는
+                      // EXIF taken_at이 occurredAt에 들어가 있고, film/music/
+                      // place는 occurredAt이 null이라 자동으로 게시된 날짜.
+                      // 작성자 본인이면 탭으로 picker 열어서 수정 가능.
+                      GestureDetector(
+                        onTap: _canDelete ? _showMomentDatePicker : null,
+                        behavior: HitTestBehavior.opaque,
+                        child: Text(
+                          DateFormat.yMMMMd('en').format(
+                            _current.occurredAt ?? _current.createdAt,
+                          ),
+                          style: AppTypography.body(12).copyWith(
+                            color: context.colors.foregroundMuted,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => setState(() => _liked = !_liked),
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: FaIcon(
-                        _liked
-                            ? FontAwesomeIcons.solidHeart
-                            : FontAwesomeIcons.heart,
-                        size: 20,
-                        color: _liked
-                            ? const Color(0xFFE06C75)
-                            : context.colors.foregroundMuted,
+                Builder(builder: (context) {
+                  // 현재 content가 좋아요 됐는지 — likes provider의 set 조회.
+                  // 로딩 중이면 valueOrNull이 null이라 unliked로 보임 (수
+                  // 백 ms 후 reconcile). optimistic toggle은 즉시 반영됨.
+                  final likedSet = ref
+                      .watch(myLikesForSceneProvider(_sceneId))
+                      .valueOrNull ?? const <String>{};
+                  final liked = likedSet.contains(_current.id);
+                  return GestureDetector(
+                    onTap: _toggleLike,
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Center(
+                        child: FaIcon(
+                          liked
+                              ? FontAwesomeIcons.solidHeart
+                              : FontAwesomeIcons.heart,
+                          size: 20,
+                          color: liked
+                              ? const Color(0xFFE06C75)
+                              : context.colors.foregroundMuted,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+                if (_canDelete) ...[
+                  const SizedBox(width: 16),
+                  GestureDetector(
+                    onTap: _handleMoreActions,
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: Center(
+                        child: FaIcon(
+                          FontAwesomeIcons.ellipsis,
+                          size: 18,
+                          color: context.colors.foregroundMuted,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                GestureDetector(
-                  onTap: _shareCurrent,
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: Center(
-                      child: FaIcon(
-                        FontAwesomeIcons.arrowUpFromBracket,
-                        size: 18,
-                        color: context.colors.foregroundMuted,
-                      ),
-                    ),
-                  ),
-                ),
+                ],
               ],
             ),
           ),
@@ -603,9 +647,8 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
           SizedBox(
             height: 64,
             child: _ThumbnailDial(
-              totalCount: widget.totalCount,
+              contents: _contents,
               currentIndex: _currentIndex,
-              mediaTypes: widget.mediaTypes,
               onIndexChanged: (i) {
                     setState(() {
                       if (i == _currentIndex) {
@@ -621,6 +664,23 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
             ),
           ),
 
+          // 썸네일 dial 가운데(=선택된 thumb) 아래에 고정 dot. dial이 항상 선택
+          // 항목을 중앙으로 스냅하므로 dot은 움직일 필요 없이 정중앙에 고정.
+          // 단일 콘텐츠면 표기 의미가 없어 숨김.
+          if (_contents.length > 1) ...[
+            const SizedBox(height: 8),
+            Center(
+              child: Container(
+                width: 4,
+                height: 4,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: context.colors.foregroundMuted,
+                ),
+              ),
+            ),
+          ],
+
           SizedBox(height: padding.bottom + 16),
         ],
       ),
@@ -635,215 +695,130 @@ class _ContentViewerV2State extends State<ContentViewerV2> {
 // ── 콘텐츠 정보 오버레이 (dimmed 위 center) ──────────────────
 
 class _ContentInfo extends StatelessWidget {
-  const _ContentInfo({
-    required this.mediaType,
-    required this.index,
-    this.capturedAt,
-    this.capturedLocation,
-    this.photoWidth,
-    this.photoHeight,
-    this.filmTitle,
-    this.filmReleaseDate,
-    this.filmDirector,
-    this.filmKind,
-    this.filmGenres,
-    this.filmRuntimeMinutes,
-    this.musicKind,
-    this.musicTitle,
-    this.musicArtist,
-    this.musicAlbum,
-    this.musicReleaseDate,
-    this.placeName,
-    this.placeAddress,
-    this.placeCategory,
-    this.placeRegion,
-    this.placeLat,
-    this.placeLng,
-  });
+  const _ContentInfo({required this.content});
 
-  final String mediaType;
-  final int index;
-  final DateTime? capturedAt;
-  final String? capturedLocation;
-  final int? photoWidth;
-  final int? photoHeight;
-  final String? filmTitle;
-  final DateTime? filmReleaseDate;
-  final String? filmDirector;
-  final String? filmKind;
-  final List<String>? filmGenres;
-  final int? filmRuntimeMinutes;
-  final String? musicKind;
-  final String? musicTitle;
-  final String? musicArtist;
-  final String? musicAlbum;
-  final DateTime? musicReleaseDate;
-  final String? placeName;
-  final String? placeAddress;
-  final String? placeCategory;
-  final String? placeRegion;
-  final double? placeLat;
-  final double? placeLng;
+  final Content content;
 
   @override
   Widget build(BuildContext context) {
-    switch (mediaType) {
-      case 'film':
-        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
-        final kind = filmKind ?? (index.isEven ? 'movie' : 'series');
-        final release = filmReleaseDate ??
-            DateTime(2020 + index % 6, 1 + index % 12, 1 + index % 28);
-        final genres = filmGenres ?? _mockFilmGenres[index % _mockFilmGenres.length];
-        final runtime = filmRuntimeMinutes ?? (90 + (index * 7) % 60);
-        final kindLabel =
-            kind.toLowerCase() == 'series' ? 'TV Series' : 'Movie';
+    final p = content.payload;
+    final mutedStyle =
+        AppTypography.body(13).copyWith(color: context.colors.foregroundMuted);
 
+    Widget pill(String text) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(4),
+            color: context.colors.foreground.withValues(alpha: 0.1),
+          ),
+          child: Text(
+            text,
+            style: AppTypography.body(11)
+                .copyWith(color: context.colors.foreground),
+          ),
+        );
+
+    Widget line(String text) =>
+        Text(text, textAlign: TextAlign.center, style: mutedStyle);
+
+    switch (content.type) {
+      case 'film':
+        final kind = (p['media_type'] as String?) ?? 'movie';
+        final kindLabel = kind == 'tv' ? 'TV Series' : 'Movie';
+        final genres = (p['genres'] as List?)?.whereType<String>().toList()
+            ?? const <String>[];
+        final year = p['release_year'];
+        final runtime = p['runtime'];
+        final detailParts = <String>[
+          if (year != null) year.toString(),
+          if (runtime is int) '$runtime min',
+        ];
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                color: context.colors.foreground.withValues(alpha: 0.1),
-              ),
-              child: Text(
-                kindLabel,
-                style: AppTypography.body(11)
-                    .copyWith(color: context.colors.foreground),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              genres.join(' / '),
-              textAlign: TextAlign.center,
-              style: AppTypography.body(13).copyWith(
-                color: context.colors.foregroundMuted,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${DateFormat.yMMMd('en').format(release)}  ·  $runtime min',
-              style: AppTypography.body(13).copyWith(
-                color: context.colors.foregroundMuted,
-              ),
-            ),
+            pill(kindLabel),
+            if (genres.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              line(genres.join(' / ')),
+            ],
+            if (detailParts.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              line(detailParts.join('  ·  ')),
+            ],
           ],
         );
       case 'music':
-        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
-        final musicKindResolved =
-            musicKind ?? (index.isEven ? 'track' : 'album');
-        final isTrack = musicKindResolved.toLowerCase() == 'track';
-        final albumName =
-            musicAlbum ?? _mockMusicAlbums[index % _mockMusicAlbums.length];
-        final musicRelease = musicReleaseDate ??
-            DateTime(2018 + index % 7, 1 + index % 12, 1 + index % 28);
-        final musicKindLabel = isTrack ? 'Track' : 'Album';
-
+        final kind = (p['kind'] as String?) ?? 'track';
+        final isTrack = kind == 'track';
+        final album = p['album'] as String?;
+        final year = p['year'] as String?;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                color: context.colors.foreground.withValues(alpha: 0.1),
-              ),
-              child: Text(
-                musicKindLabel,
-                style: AppTypography.body(11)
-                    .copyWith(color: context.colors.foreground),
-              ),
-            ),
-            if (isTrack) ...[
+            pill(isTrack ? 'Track' : 'Album'),
+            if (isTrack && album != null && album.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text(
-                albumName,
-                textAlign: TextAlign.center,
-                style: AppTypography.body(13)
-                    .copyWith(color: context.colors.foregroundMuted),
-              ),
+              line(album),
             ],
-            const SizedBox(height: 8),
-            Text(
-              DateFormat.yMMMd('en').format(musicRelease),
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
+            if (year != null && year.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              line(year),
+            ],
           ],
         );
       case 'place':
-        // 호출부가 실제 메타를 안 넘기면 미리보기용 mock으로 대체.
-        final categoryResolved = placeCategory ??
-            _mockPlaceCategories[index % _mockPlaceCategories.length];
-        final regionResolved = placeRegion ??
-            _mockPlaceRegions[index % _mockPlaceRegions.length];
-        final latResolved = placeLat ?? (37.5512 + index * 0.03);
-        final lngResolved = placeLng ?? (126.9882 + index * 0.03);
-
+        final region = p['region'] as String?;
+        final country = p['country'] as String?;
+        final regionLine = [region, country]
+            .whereType<String>()
+            .where((s) => s.isNotEmpty)
+            .join(', ');
+        final lat = p['lat'];
+        final lng = p['lng'];
+        final address = p['address'] as String?;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(4),
-                color: context.colors.foreground.withValues(alpha: 0.1),
+            if (regionLine.isNotEmpty) ...[
+              pill(regionLine),
+              const SizedBox(height: 8),
+            ],
+            if (address != null && address.isNotEmpty)
+              line(address),
+            if (lat is num && lng is num) ...[
+              const SizedBox(height: 8),
+              line(
+                '${lat.toDouble().toStringAsFixed(4)}°, '
+                '${lng.toDouble().toStringAsFixed(4)}°',
               ),
-              child: Text(
-                categoryResolved,
-                style: AppTypography.body(11)
-                    .copyWith(color: context.colors.foreground),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              regionResolved,
-              textAlign: TextAlign.center,
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '${latResolved.toStringAsFixed(4)}°, ${lngResolved.toStringAsFixed(4)}°',
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
+            ],
           ],
         );
       default:
-        // photo — EXIF 기반 메타 (장소 / 촬영 시간 / 크기). 호출부가 실제
-        // 값을 안 넘기면 미리보기용 mock으로 대체.
-        final location = capturedLocation ?? 'Seoul, Korea';
-        final captured = capturedAt ??
-            DateTime.now().subtract(Duration(days: index, hours: 3));
-        final width = photoWidth ?? (index.isEven ? 1200 : 800);
-        final height = photoHeight ?? (index.isEven ? 800 : 1200);
-
+        // photo — EXIF 기반 메타 (촬영 시간, 좌표, 크기). 없는 필드는 omit.
+        final width = (p['width'] as num?)?.toInt();
+        final height = (p['height'] as num?)?.toInt();
+        final takenAtRaw = p['taken_at'] as String?;
+        final taken = takenAtRaw != null
+            ? DateTime.tryParse(takenAtRaw)
+            : null;
+        final lat = p['lat'];
+        final lng = p['lng'];
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              location,
-              textAlign: TextAlign.center,
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              DateFormat.yMMMd('en').add_jm().format(captured),
-              textAlign: TextAlign.center,
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '$width × $height',
-              textAlign: TextAlign.center,
-              style: AppTypography.body(13)
-                  .copyWith(color: context.colors.foregroundMuted),
-            ),
+            if (lat is num && lng is num) ...[
+              line(
+                '${lat.toDouble().toStringAsFixed(4)}°, '
+                '${lng.toDouble().toStringAsFixed(4)}°',
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (taken != null) ...[
+              line(DateFormat.yMMMd('en').add_jm().format(taken)),
+              const SizedBox(height: 8),
+            ],
+            if (width != null && height != null) line('$width × $height'),
           ],
         );
     }
@@ -854,14 +829,12 @@ class _ContentInfo extends StatelessWidget {
 
 class _FilmContentCard extends StatelessWidget {
   const _FilmContentCard({
-    required this.index,
     required this.posterUrl,
     this.title,
     this.director,
     this.imageOverlay,
   });
 
-  final int index;
   final String posterUrl;
   final String? title;
   final String? director;
@@ -871,10 +844,6 @@ class _FilmContentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedTitle = title ?? 'Film Title #${index + 1}';
-    final resolvedDirector =
-        director ?? _mockFilmDirectors[index % _mockFilmDirectors.length];
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -901,125 +870,51 @@ class _FilmContentCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (imageOverlay != null)
+                if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
                       context, imageOverlay!),
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: TmdbBadge(),
+                  ),
+                ],
               ],
             ),
           ),
         ),
         const SizedBox(height: 24),
-        Text(
-          resolvedTitle,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(17, weight: FontWeight.w600)
-              .copyWith(color: context.colors.foreground),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          resolvedDirector,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(13)
-              .copyWith(color: context.colors.foregroundMuted),
-        ),
+        if (title != null && title!.isNotEmpty)
+          Text(
+            title!,
+            textAlign: TextAlign.center,
+            style: AppTypography.body(17, weight: FontWeight.w600)
+                .copyWith(color: context.colors.foreground),
+          ),
+        if (director != null && director!.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            director!,
+            textAlign: TextAlign.center,
+            style: AppTypography.body(13)
+                .copyWith(color: context.colors.foregroundMuted),
+          ),
+        ],
       ],
     );
   }
 }
 
-const _mockFilmDirectors = [
-  'Christopher Nolan',
-  'Greta Gerwig',
-  'Bong Joon-ho',
-  'Sofia Coppola',
-  'Wes Anderson',
-  'Park Chan-wook',
-];
-
-const _mockFilmGenres = [
-  ['Drama', 'Romance'],
-  ['Drama', 'Coming-of-age'],
-  ['Thriller', 'Mystery'],
-  ['Comedy', 'Drama'],
-  ['Sci-Fi', 'Adventure'],
-  ['Romance', 'Comedy'],
-];
-
-const _mockMusicTitles = [
-  'Mr. Brightside',
-  'Karma Police',
-  'Let It Happen',
-  'Through the Night',
-  'Kyoto',
-  'Super Shy',
-];
-
-const _mockMusicArtists = [
-  'The Killers',
-  'Radiohead',
-  'Tame Impala',
-  'IU',
-  'Phoebe Bridgers',
-  'NewJeans',
-];
-
-const _mockMusicAlbums = [
-  'Hot Fuss',
-  'OK Computer',
-  'Currents',
-  'Palette',
-  'Punisher',
-  'Get Up',
-];
-
-const _mockPlaceNames = [
-  'Tokyo Tower',
-  'Yeonnam-dong Cafe',
-  'Hongik Park',
-  'Namsan Lookout',
-  'Hanok Village',
-  'Gwangjang Market',
-];
-
-const _mockPlaceAddresses = [
-  '4-2-8 Shibakoen, Minato City, Tokyo',
-  '252-1 Yeonnam-dong, Mapo-gu, Seoul',
-  '188 Wausan-ro, Mapo-gu, Seoul',
-  '105 Sopa-ro, Yongsan-gu, Seoul',
-  '99-2 Bukchon-ro 11-gil, Jongno-gu',
-  '88 Changgyeonggung-ro, Jongno-gu',
-];
-
-const _mockPlaceCategories = [
-  'Landmark',
-  'Cafe',
-  'Park',
-  'Lookout',
-  'Heritage',
-  'Market',
-];
-
-const _mockPlaceRegions = [
-  'Tokyo, Japan',
-  'Seoul, Korea',
-  'Seoul, Korea',
-  'Seoul, Korea',
-  'Seoul, Korea',
-  'Seoul, Korea',
-];
-
 // ── 음악 콘텐츠 카드 (앨범아트 + 제목 + 아티스트, 단순 레이아웃) ─
 
 class _MusicContentCard extends StatelessWidget {
   const _MusicContentCard({
-    required this.index,
     required this.albumArtUrl,
     this.title,
     this.artist,
     this.imageOverlay,
   });
 
-  final int index;
   final String albumArtUrl;
   final String? title;
   final String? artist;
@@ -1029,11 +924,6 @@ class _MusicContentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedTitle =
-        title ?? _mockMusicTitles[index % _mockMusicTitles.length];
-    final resolvedArtist =
-        artist ?? _mockMusicArtists[index % _mockMusicArtists.length];
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1060,27 +950,36 @@ class _MusicContentCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (imageOverlay != null)
+                if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
                       context, imageOverlay!),
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: SpotifyBadge(),
+                  ),
+                ],
               ],
             ),
           ),
         ),
         const SizedBox(height: 24),
-        Text(
-          resolvedTitle,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(17, weight: FontWeight.w600)
-              .copyWith(color: context.colors.foreground),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          resolvedArtist,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(13)
-              .copyWith(color: context.colors.foregroundMuted),
-        ),
+        if (title != null && title!.isNotEmpty)
+          Text(
+            title!,
+            textAlign: TextAlign.center,
+            style: AppTypography.body(17, weight: FontWeight.w600)
+                .copyWith(color: context.colors.foreground),
+          ),
+        if (artist != null && artist!.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            artist!,
+            textAlign: TextAlign.center,
+            style: AppTypography.body(13)
+                .copyWith(color: context.colors.foregroundMuted),
+          ),
+        ],
       ],
     );
   }
@@ -1090,14 +989,12 @@ class _MusicContentCard extends StatelessWidget {
 
 class _PlaceContentCard extends StatelessWidget {
   const _PlaceContentCard({
-    required this.index,
     required this.mapImageUrl,
     this.name,
     this.address,
     this.imageOverlay,
   });
 
-  final int index;
   final String mapImageUrl;
   final String? name;
   final String? address;
@@ -1107,11 +1004,6 @@ class _PlaceContentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolvedName =
-        name ?? _mockPlaceNames[index % _mockPlaceNames.length];
-    final resolvedAddress =
-        address ?? _mockPlaceAddresses[index % _mockPlaceAddresses.length];
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
@@ -1120,7 +1012,7 @@ class _PlaceContentCard extends StatelessWidget {
           borderRadius: AppRadii.smBorder,
           child: SizedBox(
             width: 320,
-            height: 220,
+            height: 320,
             child: Stack(
               fit: StackFit.expand,
               children: [
@@ -1138,183 +1030,37 @@ class _PlaceContentCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (imageOverlay != null)
+                if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
                       context, imageOverlay!),
+                  const Positioned(
+                    top: 10,
+                    right: 10,
+                    child: MapboxBadge(),
+                  ),
+                ],
               ],
             ),
           ),
         ),
         const SizedBox(height: 24),
-        Text(
-          resolvedName,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(17, weight: FontWeight.w600)
-              .copyWith(color: context.colors.foreground),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          resolvedAddress,
-          textAlign: TextAlign.center,
-          style: AppTypography.body(13)
-              .copyWith(color: context.colors.foregroundMuted),
-        ),
-      ],
-    );
-  }
-}
-
-// ── 음악 카드 (구버전, 미사용 보관) ──────────────────────────
-
-class _MusicCard extends StatelessWidget {
-  const _MusicCard({required this.index});
-  final int index;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: context.colors.clickableArea,
-        borderRadius: AppRadii.mdBorder,
-        border: Border.all(
-          color: context.colors.foreground.withValues(alpha: 0.04),
-          width: 0.5,
-        ),
-      ),
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 앨범 커버
-          ClipRRect(
-            borderRadius: AppRadii.smBorder,
-            child: Image.network(
-              'https://picsum.photos/seed/music-$index/300/300',
-              width: 180,
-              height: 180,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                width: 180,
-                height: 180,
-                color: context.colors.nonClickableArea,
-                child: Center(
-                  child: FaIcon(
-                    FontAwesomeIcons.music,
-                    size: 32,
-                    color: context.colors.foregroundMuted,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
+        if (name != null && name!.isNotEmpty)
           Text(
-            'Track Title #${index + 1}',
+            name!,
             textAlign: TextAlign.center,
             style: AppTypography.body(17, weight: FontWeight.w600)
                 .copyWith(color: context.colors.foreground),
           ),
+        if (address != null && address!.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
-            'Artist Name',
+            address!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(13).copyWith(
-              color: context.colors.foregroundMuted,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            'Album Name',
-            textAlign: TextAlign.center,
-            style: AppTypography.body(12).copyWith(
-              color: context.colors.foregroundMuted.withValues(alpha: 0.7),
-            ),
+            style: AppTypography.body(13)
+                .copyWith(color: context.colors.foregroundMuted),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ── 장소 카드 ────────────────────────────────────────────────
-
-class _PlaceCard extends StatelessWidget {
-  const _PlaceCard({required this.index});
-  final int index;
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final style = isDark ? 'dark-v11' : 'light-v11';
-    // mock 좌표
-    final lat = 37.5512 + index * 0.01;
-    final lng = 126.9882 + index * 0.01;
-    final mapUrl =
-        'https://api.mapbox.com/styles/v1/mapbox/$style/static/'
-        'pin-s+888888($lng,$lat)/$lng,$lat,14,0/600x300@2x'
-        '?access_token=$_mapboxToken'
-        '&attribution=false&logo=false';
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: context.colors.clickableArea,
-        borderRadius: AppRadii.mdBorder,
-        border: Border.all(
-          color: context.colors.foreground.withValues(alpha: 0.04),
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 지도 미리보기
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(AppRadii.md),
-            ),
-            child: Image.network(
-              mapUrl,
-              width: double.infinity,
-              height: 180,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => Container(
-                width: double.infinity,
-                height: 180,
-                color: context.colors.nonClickableArea,
-                child: Center(
-                  child: FaIcon(
-                    FontAwesomeIcons.locationDot,
-                    size: 32,
-                    color: context.colors.foregroundMuted,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Place Name #${index + 1}',
-                  style: AppTypography.body(17, weight: FontWeight.w600)
-                      .copyWith(color: context.colors.foreground),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '123 Example Street, City, Country',
-                  style: AppTypography.body(13).copyWith(
-                    color: context.colors.foregroundMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 }
@@ -1421,34 +1167,67 @@ class _ContentImageState extends State<_ContentImage> {
 
 // ── 썸네일 dial (원통형 곡률 + 좌우 그라데이션) ──────────────
 
-class _ThumbnailDial extends StatefulWidget {
-  const _ThumbnailDial({
-    required this.totalCount,
-    required this.currentIndex,
-    required this.onIndexChanged,
-    this.mediaTypes = const [],
-  });
+/// dial 썸네일 한 칸. URL이 있으면 Image.network, 없거나 실패 시 type별
+/// 아이콘 fallback.
+class _ThumbBox extends StatelessWidget {
+  const _ThumbBox({required this.url, required this.type});
 
-  final int totalCount;
-  final int currentIndex;
-  final ValueChanged<int> onIndexChanged;
-  final List<String> mediaTypes;
+  final String? url;
+  final String type;
 
-  String _thumbUrl(int index) {
-    final type = index < mediaTypes.length ? mediaTypes[index] : 'photo';
+  FaIconData _fallbackIcon() {
     switch (type) {
       case 'film':
-        return 'https://picsum.photos/seed/film-$index/200/200';
+        return FontAwesomeIcons.film;
       case 'music':
-        return 'https://picsum.photos/seed/music-$index/200/200';
+        return FontAwesomeIcons.music;
       case 'place':
-        // 미리보기용 placeholder. 실제 데이터 연결 시엔
-        // mapbox-static-cache Edge Function의 결과 URL을 사용.
-        return 'https://picsum.photos/seed/place-$index/200/200';
+        return FontAwesomeIcons.locationDot;
       default:
-        return 'https://picsum.photos/seed/content-$index/200/200';
+        return FontAwesomeIcons.solidImage;
     }
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = ColoredBox(
+      color: context.colors.nonClickableArea,
+      child: Center(
+        child: FaIcon(
+          _fallbackIcon(),
+          size: 16,
+          color: context.colors.foregroundMuted,
+        ),
+      ),
+    );
+    final u = url;
+    if (u == null || u.isEmpty) return fallback;
+    return Image.network(
+      u,
+      fit: BoxFit.cover,
+      errorBuilder: (_, _, _) => fallback,
+    );
+  }
+}
+
+class _ThumbnailDial extends StatefulWidget {
+  const _ThumbnailDial({
+    required this.contents,
+    required this.currentIndex,
+    required this.onIndexChanged,
+  });
+
+  final List<Content> contents;
+  final int currentIndex;
+  final ValueChanged<int> onIndexChanged;
+
+  /// 썸네일에 사용할 작은 이미지 URL — 어떤 type이든 thumbSignedUrl 슬롯에
+  /// 들어있도록 ContentRepository에서 hydrate해둠. 빈 문자열이면 fallback
+  /// (locationDot/film/music 아이콘 박스).
+  String? _thumbUrl(int index) =>
+      contents[index].thumbSignedUrl;
+
+  String _typeAt(int index) => contents[index].type;
 
   @override
   State<_ThumbnailDial> createState() => _ThumbnailDialState();
@@ -1480,10 +1259,19 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
   }
 
   void _onScroll() {
-    if (!_scrollController.hasClients || _programmaticScroll) return;
+    // user 드래그가 아니면 무조건 무시. 빠른 연타로 animateTo가 새로 시작되면
+    // 이전 animateTo의 then()이 _programmaticScroll을 false로 풀어버려 새
+    // animation 중간 frame에서 rounded index가 직전 값으로 잡힐 수 있다 →
+    // parent에 stale index를 통보해 인덱스가 되돌아가는 race. _userScrolling
+    // 가드는 NotificationListener가 드래그 시작/종료에만 set하므로 정확.
+    if (!_scrollController.hasClients ||
+        _programmaticScroll ||
+        !_userScrolling) {
+      return;
+    }
     final index = (_scrollController.offset / _itemExtent)
         .round()
-        .clamp(0, widget.totalCount - 1);
+        .clamp(0, widget.contents.length - 1);
     if (index != _lastReportedIndex) {
       _lastReportedIndex = index;
       widget.onIndexChanged(index);
@@ -1545,11 +1333,11 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.symmetric(horizontal: sidePadding),
-            itemCount: widget.totalCount,
+            itemCount: widget.contents.length,
             itemBuilder: (context, index) {
               return Padding(
                 padding: EdgeInsets.only(
-                  right: index < widget.totalCount - 1 ? _spacing : 0,
+                  right: index < widget.contents.length - 1 ? _spacing : 0,
                 ),
                 child: GestureDetector(
                   onTap: () => widget.onIndexChanged(index),
@@ -1585,12 +1373,9 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
                       child: SizedBox(
                         width: _itemSize,
                         height: _itemSize,
-                        child: Image.network(
-                          widget._thumbUrl(index),
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) => Container(
-                            color: context.colors.nonClickableArea,
-                          ),
+                        child: _ThumbBox(
+                          url: widget._thumbUrl(index),
+                          type: widget._typeAt(index),
                         ),
                       ),
                     ),

@@ -44,6 +44,18 @@
   "@addSceneCardLabel": {
     "description": "Label shown in the AddSceneCard (appended at the end of the home carousel, and shown alone when no scenes exist yet)."
   },
+  "homeEmptyTaglinePrefix": "Keep the ",
+  "@homeEmptyTaglinePrefix": {
+    "description": "First part of the home empty-state tagline, before the highlighted brand word."
+  },
+  "homeEmptyTaglineBrand": "Scenes",
+  "@homeEmptyTaglineBrand": {
+    "description": "Highlighted brand word inside the home empty-state tagline."
+  },
+  "homeEmptyTaglineSuffix": "\nwe shared together.",
+  "@homeEmptyTaglineSuffix": {
+    "description": "Last part of the home empty-state tagline, after the highlighted brand word."
+  },
   "detailBack": "Back",
   "@detailBack": {
     "description": "A11y label for the back/close affordance in the scene detail app bar."
@@ -115,9 +127,52 @@
     "description": "Action label to disconnect from partner."
   },
   "settingsDeleteAccount": "Delete account",
+  "settingsDangerZone": "Danger zone",
+  "@settingsDangerZone": {
+    "description": "Settings entry that groups destructive actions (disconnect, delete account)."
+  },
+  "dangerZoneTitle": "Danger zone",
+  "@dangerZoneTitle": {
+    "description": "App bar title for the danger zone screen."
+  },
+  "dangerZoneSubtitle": "Actions in this area can't be undone.",
+  "@dangerZoneSubtitle": {
+    "description": "Subtitle/description shown at the top of the danger zone screen."
+  },
+  "uploadChipPhotosProgress": "Uploading {current} of {total}",
+  "@uploadChipPhotosProgress": {
+    "description": "Progress label shown in the floating upload chip while photos are uploading.",
+    "placeholders": {
+      "current": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "uploadChipFilmActive": "Adding film…",
+  "uploadChipMusicActive": "Adding music…",
+  "uploadChipPlaceActive": "Adding place…",
+  "uploadChipPhotosDone": "{count, plural, =1{1 photo added} other{{count} photos added}}",
+  "@uploadChipPhotosDone": {
+    "description": "Done label shown briefly after photos finish uploading.",
+    "placeholders": {
+      "count": { "type": "int" }
+    }
+  },
+  "uploadChipFilmDone": "Film added",
+  "uploadChipMusicDone": "Music added",
+  "uploadChipPlaceDone": "Place added",
+  "uploadChipFailed": "Upload failed",
+  "uploadChipCancelling": "Cancelling…",
+  "profileDeletedUserName": "Deleted user",
+  "@profileDeletedUserName": {
+    "description": "Label shown in place of the actual name for a soft-deleted profile (abandoned couple)."
+  },
   "sceneDetailPlay": "Play scene",
   "@sceneDetailPlay": {
     "description": "A11y label for the play action button in the scene detail."
+  },
+  "sceneDetailEmptyMedia": "Fill this Scene with moments that matter.",
+  "@sceneDetailEmptyMedia": {
+    "description": "Placeholder text shown in scene detail when there is no media yet."
   },
   "profileNarrative": "Since {date}, we have captured {count} Scenes together.",
   "@profileNarrative": {
@@ -138,5 +193,51 @@
         "example": "14"
       }
     }
+  },
+  "notiPromptTitleWithName": "Don't miss\n{name}'s updates",
+  "@notiPromptTitleWithName": {
+    "description": "Headline of the post-pairing notification permission prompt screen, including the partner's display name.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Soobin" }
+    }
+  },
+  "notiPromptTitleNoName": "Don't miss\na single update",
+  "@notiPromptTitleNoName": {
+    "description": "Headline used when the partner display name isn't available yet."
+  },
+  "notiPromptBodyWithName": "Get notified when {name} adds scenes,\nmoments, or reacts to yours.",
+  "@notiPromptBodyWithName": {
+    "description": "Body copy of the notification permission prompt, with partner name.",
+    "placeholders": {
+      "name": { "type": "String", "example": "Soobin" }
+    }
+  },
+  "notiPromptBodyNoName": "Get notified when your person adds scenes,\nmoments, or reacts to yours.",
+  "@notiPromptBodyNoName": {
+    "description": "Body copy fallback for the notification permission prompt."
+  },
+  "notiPromptAllow": "Allow notifications",
+  "@notiPromptAllow": {
+    "description": "Primary button on the notification permission prompt — opens the OS dialog."
+  },
+  "notiPromptSkip": "Maybe later",
+  "@notiPromptSkip": {
+    "description": "Secondary action on the notification permission prompt — proceeds without asking."
+  },
+  "addMediaCapacityLabel": "Moments {count}/{limit}",
+  "@addMediaCapacityLabel": {
+    "description": "Caption under the AddMediaSheet showing how many moments are in the current scene out of the tier's limit.",
+    "placeholders": {
+      "count": { "type": "int", "example": "12" },
+      "limit": { "type": "int", "example": "30" }
+    }
+  },
+  "hdBannerBenefitMedia": "Unlock films, music, and places.",
+  "@hdBannerBenefitMedia": {
+    "description": "Scenes HD banner subtitle — variant about extra media types."
+  },
+  "hdBannerBenefitMoments": "Up to 100 moments in every scene.",
+  "@hdBannerBenefitMoments": {
+    "description": "Scenes HD banner subtitle — variant about higher per-scene moment cap."
   }
 }

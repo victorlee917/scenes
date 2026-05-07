@@ -10,14 +10,16 @@ import '../formatters.dart';
 import '../home_view_model.dart';
 import '../models/scene.dart';
 import '../../subscription/subscription_screen.dart';
+import '../../subscription/subscription_view_model.dart';
 import 'detail_app_bar.dart';
 import 'scene_detail_screen.dart';
+import 'scene_title_fallback.dart';
 
 /// Scene 전체 리스트를 풀 페이지로 보여주는 화면.
 ///
 /// 하단 transport Sort 버튼에서 진입. 항목 탭 시 [onSceneTap]으로
 /// scene.id를 넘기고 pop.
-class SceneListScreen extends StatefulWidget {
+class SceneListScreen extends ConsumerStatefulWidget {
   const SceneListScreen({
     super.key,
     required this.scenes,
@@ -45,10 +47,10 @@ class SceneListScreen extends StatefulWidget {
   }
 
   @override
-  State<SceneListScreen> createState() => _SceneListScreenState();
+  ConsumerState<SceneListScreen> createState() => _SceneListScreenState();
 }
 
-class _SceneListScreenState extends State<SceneListScreen> {
+class _SceneListScreenState extends ConsumerState<SceneListScreen> {
   bool _newestFirst = true;
   bool _isEditing = false;
   late List<Scene> _editableScenes;
@@ -67,8 +69,13 @@ class _SceneListScreenState extends State<SceneListScreen> {
     await Future<void>.delayed(const Duration(milliseconds: 600));
   }
 
+  /// 라이브 provider 데이터 — reorder/생성/삭제 후 즉시 반영. 초기 인자(widget
+  /// .scenes)는 reorder 직전 스냅샷이라 새 순서를 못 봐서 사용 안 함.
+  List<Scene> get _liveScenes =>
+      ref.watch(homeViewModelProvider).scenes;
+
   List<Scene> get _sortedScenes =>
-      _newestFirst ? widget.scenes.reversed.toList() : widget.scenes;
+      _newestFirst ? _liveScenes.reversed.toList() : _liveScenes;
 
   void _enterEditMode() {
     setState(() {
@@ -83,9 +90,13 @@ class _SceneListScreenState extends State<SceneListScreen> {
 
   void _saveEdit(BuildContext context) {
     final container = ProviderScope.containerOf(context);
-    container.read(homeViewModelProvider.notifier).reorderScenes(
-      _editableScenes,
-    );
+    // _editableScenes는 display 순서(newestFirst면 newest가 위). DB는 position
+    // 오름차순(1 = 가장 오래된)이라, newestFirst 모드에서는 reverse해서 보내
+    // 줘야 display의 위쪽 항목이 가장 높은 position을 받음.
+    final dbOrder = _newestFirst
+        ? _editableScenes.reversed.toList()
+        : _editableScenes;
+    container.read(homeViewModelProvider.notifier).reorderScenes(dbOrder);
     setState(() => _isEditing = false);
   }
 
@@ -138,7 +149,7 @@ class _SceneListScreenState extends State<SceneListScreen> {
                 : RefreshIndicator(
                     onRefresh: _handleRefresh,
                     color: context.colors.foreground,
-                    backgroundColor: context.colors.nonClickableArea,
+                    backgroundColor: context.colors.clickableArea,
                     elevation: 0,
                     displacement: padding.top + 48 + 10,
                     edgeOffset: 0,
@@ -216,12 +227,15 @@ class _SceneListScreenState extends State<SceneListScreen> {
                           ),
                           FloatingActionItem(
                             label: l10n.sceneListEditOrder,
-                            badge: 'HD',
+                            badge: ref.read(isSubscribedProvider) ? null : 'HD',
                             onTap: () {
-                              // TODO: 구독 상태에 따라 분기
-                              Navigator.of(context).push(
-                                SubscriptionScreen.route(),
-                              );
+                              if (ref.read(isSubscribedProvider)) {
+                                _enterEditMode();
+                              } else {
+                                Navigator.of(context).push(
+                                  SubscriptionScreen.route(),
+                                );
+                              }
                             },
                           ),
                         ],
@@ -255,7 +269,10 @@ class _SceneListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final localeTag = locale.toLanguageTag();
-    final dateLine = formatSceneDateRange(scene.dates, localeTag);
+    // 날짜는 콘텐츠 있을 때만 노출. TODO: contents의 min/max occurred_at에서 계산.
+    final dateLine = scene.media.total > 0
+        ? formatSceneDateRange(scene.dates, localeTag)
+        : '';
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -272,13 +289,15 @@ class _SceneListTile extends StatelessWidget {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    Image.network(
-                      scene.coverImageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => Container(
-                        color: context.colors.nonClickableArea,
+                    if (scene.coverImageUrl.isEmpty)
+                      SceneTitleFallback(title: scene.title)
+                    else
+                      Image.network(
+                        scene.coverImageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) =>
+                            SceneTitleFallback(title: scene.title),
                       ),
-                    ),
                     Container(
                       color: Colors.black.withValues(alpha: 0.4),
                     ),

@@ -1,29 +1,51 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors_ext.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/fade_text.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../upload/upload_queue_view_model.dart';
 import '../models/scene.dart';
+import '../models/spotify_hit.dart';
+import '../music_picker_view_model.dart';
 import 'detail_app_bar.dart';
 import 'scene_detail_screen.dart';
 
 /// 음악 검색·선택 화면.
 ///
-/// 한 번에 하나의 곡만 선택 가능. 검색 → 리스트 → 선택 → 저장.
-class MusicPickerScreen extends StatefulWidget {
-  const MusicPickerScreen({super.key, this.scene});
+/// 한 번에 하나의 항목(track 또는 album)만 선택 가능. 입력 → 300ms 디바운스
+/// → Spotify 검색. 검색·결과·로딩 상태는 [musicPickerViewModelProvider]가 관리.
+class MusicPickerScreen extends ConsumerStatefulWidget {
+  const MusicPickerScreen({
+    super.key,
+    this.scene,
+    this.momentDate,
+    this.landOnSceneDetail = true,
+  });
 
   final Scene? scene;
+  final DateTime? momentDate;
+  final bool landOnSceneDetail;
 
-  static Route<void> route({Scene? scene}) {
+  static Route<void> route({
+    Scene? scene,
+    DateTime? momentDate,
+    bool landOnSceneDetail = true,
+  }) {
     return PageRouteBuilder<void>(
       opaque: true,
       transitionDuration: const Duration(milliseconds: 340),
       reverseTransitionDuration: const Duration(milliseconds: 280),
       pageBuilder: (context, animation, secondaryAnimation) =>
-          MusicPickerScreen(scene: scene),
+          MusicPickerScreen(
+        scene: scene,
+        momentDate: momentDate,
+        landOnSceneDetail: landOnSceneDetail,
+      ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -42,15 +64,13 @@ class MusicPickerScreen extends StatefulWidget {
   }
 
   @override
-  State<MusicPickerScreen> createState() => _MusicPickerScreenState();
+  ConsumerState<MusicPickerScreen> createState() => _MusicPickerScreenState();
 }
 
-class _MusicPickerScreenState extends State<MusicPickerScreen> {
+class _MusicPickerScreenState extends ConsumerState<MusicPickerScreen> {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
-  List<_MusicResult> _results = [];
-  _MusicResult? _selected;
-  bool _searching = false;
+  SpotifyHit? _selected;
 
   @override
   void dispose() {
@@ -59,38 +79,48 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
     super.dispose();
   }
 
-  Future<void> _search() async {
-    final query = _searchController.text.trim();
-    if (query.isEmpty) return;
-    _focusNode.unfocus();
-    setState(() => _searching = true);
-
-    // TODO: 실제 API(Spotify/Apple Music 등) 연동. 현재는 mock.
-    await Future<void>.delayed(const Duration(milliseconds: 600));
-
-    if (mounted) {
-      setState(() {
-        _searching = false;
-        _results = _mockSearch(query);
-      });
-    }
+  void _onChanged(String value) {
+    ref.read(musicPickerViewModelProvider.notifier).updateQuery(
+          value,
+          locale: _spotifyLocale(context),
+        );
+    setState(() {}); // suffix clear 버튼 노출 갱신
   }
 
-  void _selectMusic(_MusicResult music) {
+  /// Spotify language/market 결정. film_picker와 동일하게 디바이스 시스템
+  /// locale을 직접 읽어 MaterialApp.locale 오버라이드 영향 받지 않도록.
+  String _spotifyLocale(BuildContext context) {
+    final lang = View.of(context).platformDispatcher.locale.languageCode;
+    return lang == 'ko' ? 'ko' : 'en';
+  }
+
+  void _selectMusic(SpotifyHit hit) {
     setState(() {
-      _selected = _selected == music ? null : music;
+      _selected =
+          (_selected?.id == hit.id && _selected?.kind == hit.kind) ? null : hit;
     });
   }
 
-  Future<void> _save() async {
-    if (_selected == null) return;
-    // TODO: 음악 저장 로직.
+  /// 선택된 항목을 큐에 enqueue 후 picker를 즉시 닫고 scene detail로 이동.
+  /// 실제 업로드는 background에서 [UploadQueueNotifier]가 처리.
+  void _save() {
+    final hit = _selected;
+    final scene = widget.scene;
+    if (hit == null || scene == null) return;
+
+    ref.read(uploadQueueProvider.notifier).enqueueMusic(
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          hit: hit,
+          momentDate: widget.momentDate,
+        );
+
     Navigator.of(context).pop();
-    if (widget.scene != null) {
+    if (widget.landOnSceneDetail) {
       final viewportWidth = MediaQuery.sizeOf(context).width;
       Navigator.of(context).push(
         SceneDetailScreen.fadeRoute(
-          scene: widget.scene!,
+          scene: scene,
           canisterSize: viewportWidth * 0.5,
         ),
       );
@@ -100,7 +130,17 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final state = ref.watch(musicPickerViewModelProvider);
     final hasSelection = _selected != null;
+
+    ref.listen(
+      musicPickerViewModelProvider.select((s) => s.error),
+      (prev, next) {
+        if (next != null && next.isNotEmpty) {
+          AppToast.show(context, 'Search failed. Please try again.');
+        }
+      },
+    );
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -130,7 +170,6 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
                     autocorrect: false,
                     enableSuggestions: false,
                     textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _search(),
                     style: AppTypography.body(15).copyWith(
                       color: context.colors.foreground,
                     ),
@@ -156,7 +195,7 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
                           ? GestureDetector(
                               onTap: () {
                                 _searchController.clear();
-                                setState(() {});
+                                _onChanged('');
                               },
                               child: Padding(
                                 padding: const EdgeInsets.only(right: 14),
@@ -189,7 +228,7 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
                         vertical: 14,
                       ),
                     ),
-                    onChanged: (_) => setState(() {}),
+                    onChanged: _onChanged,
                   ),
                 ),
               ),
@@ -208,39 +247,7 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
                     stops: [0.0, 0.015, 1.0],
                   ).createShader(bounds),
                   blendMode: BlendMode.dstIn,
-                  child: _searching
-                      ? Center(
-                          child: CircularProgressIndicator(
-                            color: context.colors.foreground,
-                            strokeWidth: 1.5,
-                          ),
-                        )
-                      : _results.isEmpty
-                          ? Center(
-                              child: Text(
-                                _searchController.text.isEmpty
-                                    ? 'Search for music to add.'
-                                    : 'No results found.',
-                                style: AppTypography.body(14).copyWith(
-                                  color: context.colors.foregroundMuted,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                            padding: EdgeInsets.only(
-                              bottom: padding.bottom + 24,
-                            ),
-                            itemCount: _results.length,
-                            itemBuilder: (context, index) {
-                              final music = _results[index];
-                              final isSelected = _selected == music;
-                              return _MusicTile(
-                                music: music,
-                                selected: isSelected,
-                                onTap: () => _selectMusic(music),
-                              );
-                            },
-                          ),
+                  child: _buildResultsBody(state, padding),
                 ),
               ),
             ],
@@ -270,8 +277,12 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
                     ),
                     child: Text(
                       'Save',
-                      style: AppTypography.body(15, weight: FontWeight.w600)
-                          .copyWith(color: context.colors.foreground),
+                      style: AppTypography.body(
+                        15,
+                        weight: FontWeight.w600,
+                      ).copyWith(
+                        color: context.colors.foreground,
+                      ),
                     ),
                   ),
                 ),
@@ -282,23 +293,100 @@ class _MusicPickerScreenState extends State<MusicPickerScreen> {
       ),
     );
   }
+
+  Widget _buildResultsBody(MusicPickerState state, EdgeInsets padding) {
+    if (state.isLoading) {
+      return Center(
+        child: CircularProgressIndicator(
+          color: context.colors.foreground,
+          strokeWidth: 1.5,
+        ),
+      );
+    }
+
+    if (state.results.isEmpty) {
+      return Center(
+        child: Text(
+          state.query.trim().isEmpty
+              ? 'Search for music to add.'
+              : 'No results found.',
+          style: AppTypography.body(14).copyWith(
+            color: context.colors.foregroundMuted,
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: EdgeInsets.only(bottom: padding.bottom + 24),
+      itemCount: state.results.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return const _SpotifyAttribution();
+        }
+        final hit = state.results[index - 1];
+        final isSelected =
+            _selected?.id == hit.id && _selected?.kind == hit.kind;
+        return _MusicTile(
+          hit: hit,
+          selected: isSelected,
+          onTap: () => _selectMusic(hit),
+        );
+      },
+    );
+  }
+}
+
+/// Spotify TOS상 데이터 노출 화면에 attribution 표시 의무.
+/// MapBox/TMDB와 동일한 패턴.
+class _SpotifyAttribution extends StatelessWidget {
+  const _SpotifyAttribution();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 8, top: 8),
+      child: GestureDetector(
+        onTap: () => launchUrl(
+          Uri.parse('https://www.spotify.com/'),
+          mode: LaunchMode.externalApplication,
+        ),
+        child: Text(
+          'Music data provided by Spotify',
+          style: AppTypography.body(10).copyWith(
+            color: context.colors.foregroundMuted.withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ── 음악 결과 타일 ───────────────────────────────────────────
 
 class _MusicTile extends StatelessWidget {
   const _MusicTile({
-    required this.music,
+    required this.hit,
     required this.selected,
     required this.onTap,
   });
 
-  final _MusicResult music;
+  final SpotifyHit hit;
   final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    // line 3 포맷
+    // - track: "${album} · ${year}"
+    // - album: "Album · ${year}"
+    // year만 없으면 · 구분자 없이 좌측만 표시.
+    final left = hit.isTrack ? (hit.album ?? '') : 'Album';
+    final right = hit.year ?? '';
+    final thirdLine = right.isEmpty
+        ? left
+        : (left.isEmpty ? right : '$left · $right');
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -316,9 +404,9 @@ class _MusicTile extends StatelessWidget {
                 width: 56,
                 height: 56,
                 color: context.colors.nonClickableArea,
-                child: music.coverUrl != null
+                child: hit.coverUrl != null
                     ? Image.network(
-                        music.coverUrl!,
+                        hit.coverUrl!,
                         fit: BoxFit.cover,
                         errorBuilder: (_, _, _) => Center(
                           child: FaIcon(
@@ -344,25 +432,27 @@ class _MusicTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   FadeText(
-                    music.title,
+                    hit.title,
                     style: AppTypography.body(15, weight: FontWeight.w500)
                         .copyWith(color: context.colors.foreground),
                   ),
                   const SizedBox(height: 3),
                   FadeText(
-                    music.artist,
+                    hit.artist,
                     style: AppTypography.body(13).copyWith(
                       color: context.colors.foregroundMuted,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  FadeText(
-                    music.album,
-                    style: AppTypography.body(12).copyWith(
-                      color: context.colors.foregroundMuted
-                          .withValues(alpha: 0.7),
+                  if (thirdLine.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    FadeText(
+                      thirdLine,
+                      style: AppTypography.body(12).copyWith(
+                        color: context.colors.foregroundMuted
+                            .withValues(alpha: 0.7),
+                      ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),
@@ -378,68 +468,4 @@ class _MusicTile extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Mock 데이터 ──────────────────────────────────────────────
-
-class _MusicResult {
-  const _MusicResult({
-    required this.title,
-    required this.artist,
-    required this.album,
-    this.coverUrl,
-  });
-
-  final String title;
-  final String artist;
-  final String album;
-  final String? coverUrl;
-}
-
-List<_MusicResult> _mockSearch(String query) {
-  final all = [
-    const _MusicResult(
-      title: 'golden hour',
-      artist: 'JVKE',
-      album: 'this is what ____ feels like',
-      coverUrl: 'https://picsum.photos/seed/music-golden/200/200',
-    ),
-    const _MusicResult(
-      title: 'Lover',
-      artist: 'Taylor Swift',
-      album: 'Lover',
-      coverUrl: 'https://picsum.photos/seed/music-lover/200/200',
-    ),
-    const _MusicResult(
-      title: 'Perfect',
-      artist: 'Ed Sheeran',
-      album: '÷ (Divide)',
-      coverUrl: 'https://picsum.photos/seed/music-perfect/200/200',
-    ),
-    const _MusicResult(
-      title: 'La Vie en Rose',
-      artist: 'Édith Piaf',
-      album: 'La Vie en Rose',
-      coverUrl: 'https://picsum.photos/seed/music-lavie/200/200',
-    ),
-    const _MusicResult(
-      title: 'Moon River',
-      artist: 'Audrey Hepburn',
-      album: 'Breakfast at Tiffany\'s',
-      coverUrl: 'https://picsum.photos/seed/music-moon/200/200',
-    ),
-    const _MusicResult(
-      title: 'Can\'t Help Falling in Love',
-      artist: 'Elvis Presley',
-      album: 'Blue Hawaii',
-      coverUrl: 'https://picsum.photos/seed/music-elvis/200/200',
-    ),
-  ];
-  final q = query.toLowerCase();
-  return all
-      .where((m) =>
-          m.title.toLowerCase().contains(q) ||
-          m.artist.toLowerCase().contains(q) ||
-          m.album.toLowerCase().contains(q))
-      .toList();
 }

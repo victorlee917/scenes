@@ -17,19 +17,28 @@ class MomentSelectionScreen extends ConsumerStatefulWidget {
   const MomentSelectionScreen({
     super.key,
     this.initiallySelected = const <String>{},
+    this.sceneIdFilter,
   });
 
   final Set<String> initiallySelected;
 
+  /// 표시할 scene을 제한. null이면 모든 scene의 콘텐츠를 보여주고,
+  /// 값이 있으면 해당 scene id에 속한 콘텐츠만 그리드에 노출.
+  final Set<String>? sceneIdFilter;
+
   static Route<Set<String>> route({
     Set<String> initiallySelected = const <String>{},
+    Set<String>? sceneIdFilter,
   }) {
     return PageRouteBuilder<Set<String>>(
       opaque: false,
       transitionDuration: const Duration(milliseconds: 300),
       reverseTransitionDuration: const Duration(milliseconds: 300),
       pageBuilder: (context, animation, secondaryAnimation) =>
-          MomentSelectionScreen(initiallySelected: initiallySelected),
+          MomentSelectionScreen(
+        initiallySelected: initiallySelected,
+        sceneIdFilter: sceneIdFilter,
+      ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -89,10 +98,13 @@ class _MomentSelectionScreenState
 
   /// scene의 콘텐츠 개수만큼 mock moment 항목을 생성. 실제 데이터 연결
   /// 시 contents 테이블의 row id로 대체된다.
+  /// [sceneIdFilter]가 있으면 해당 scene id만 포함.
   List<_MomentItem> _buildMoments(List<Scene> scenes) {
+    final filter = widget.sceneIdFilter;
     final items = <_MomentItem>[];
     for (var s = 0; s < scenes.length; s++) {
       final scene = scenes[s];
+      if (filter != null && !filter.contains(scene.id)) continue;
       for (var c = 0; c < scene.media.total; c++) {
         items.add(_MomentItem(
           id: '${scene.id}_$c',

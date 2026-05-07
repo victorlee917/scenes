@@ -146,6 +146,24 @@ abstract class AppLocalizations {
   /// **'add new scene'**
   String get addSceneCardLabel;
 
+  /// First part of the home empty-state tagline, before the highlighted brand word.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the '**
+  String get homeEmptyTaglinePrefix;
+
+  /// Highlighted brand word inside the home empty-state tagline.
+  ///
+  /// In en, this message translates to:
+  /// **'Scenes'**
+  String get homeEmptyTaglineBrand;
+
+  /// Last part of the home empty-state tagline, after the highlighted brand word.
+  ///
+  /// In en, this message translates to:
+  /// **'\nwe shared together.'**
+  String get homeEmptyTaglineSuffix;
+
   /// A11y label for the back/close affordance in the scene detail app bar.
   ///
   /// In en, this message translates to:
@@ -284,11 +302,101 @@ abstract class AppLocalizations {
   /// **'Delete account'**
   String get settingsDeleteAccount;
 
+  /// Settings entry that groups destructive actions (disconnect, delete account).
+  ///
+  /// In en, this message translates to:
+  /// **'Danger zone'**
+  String get settingsDangerZone;
+
+  /// App bar title for the danger zone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Danger zone'**
+  String get dangerZoneTitle;
+
+  /// Subtitle/description shown at the top of the danger zone screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Actions in this area can\'t be undone.'**
+  String get dangerZoneSubtitle;
+
+  /// Progress label shown in the floating upload chip while photos are uploading.
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading {current} of {total}'**
+  String uploadChipPhotosProgress(int current, int total);
+
+  /// No description provided for @uploadChipFilmActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding film…'**
+  String get uploadChipFilmActive;
+
+  /// No description provided for @uploadChipMusicActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding music…'**
+  String get uploadChipMusicActive;
+
+  /// No description provided for @uploadChipPlaceActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Adding place…'**
+  String get uploadChipPlaceActive;
+
+  /// Done label shown briefly after photos finish uploading.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 photo added} other{{count} photos added}}'**
+  String uploadChipPhotosDone(int count);
+
+  /// No description provided for @uploadChipFilmDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Film added'**
+  String get uploadChipFilmDone;
+
+  /// No description provided for @uploadChipMusicDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Music added'**
+  String get uploadChipMusicDone;
+
+  /// No description provided for @uploadChipPlaceDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Place added'**
+  String get uploadChipPlaceDone;
+
+  /// No description provided for @uploadChipFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed'**
+  String get uploadChipFailed;
+
+  /// No description provided for @uploadChipCancelling.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling…'**
+  String get uploadChipCancelling;
+
+  /// Label shown in place of the actual name for a soft-deleted profile (abandoned couple).
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted user'**
+  String get profileDeletedUserName;
+
   /// A11y label for the play action button in the scene detail.
   ///
   /// In en, this message translates to:
   /// **'Play scene'**
   String get sceneDetailPlay;
+
+  /// Placeholder text shown in scene detail when there is no media yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill this Scene with moments that matter.'**
+  String get sceneDetailEmptyMedia;
 
   /// Narrative sentence displayed on the profile screen.
   ///
@@ -306,6 +414,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} Scenes'**
   String coupleScenesCount(int count);
+
+  /// Headline of the post-pairing notification permission prompt screen, including the partner's display name.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t miss\n{name}\'s updates'**
+  String notiPromptTitleWithName(String name);
+
+  /// Headline used when the partner display name isn't available yet.
+  ///
+  /// In en, this message translates to:
+  /// **'Don\'t miss\na single update'**
+  String get notiPromptTitleNoName;
+
+  /// Body copy of the notification permission prompt, with partner name.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified when {name} adds scenes,\nmoments, or reacts to yours.'**
+  String notiPromptBodyWithName(String name);
+
+  /// Body copy fallback for the notification permission prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified when your person adds scenes,\nmoments, or reacts to yours.'**
+  String get notiPromptBodyNoName;
+
+  /// Primary button on the notification permission prompt — opens the OS dialog.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow notifications'**
+  String get notiPromptAllow;
+
+  /// Secondary action on the notification permission prompt — proceeds without asking.
+  ///
+  /// In en, this message translates to:
+  /// **'Maybe later'**
+  String get notiPromptSkip;
+
+  /// Caption under the AddMediaSheet showing how many moments are in the current scene out of the tier's limit.
+  ///
+  /// In en, this message translates to:
+  /// **'Moments {count}/{limit}'**
+  String addMediaCapacityLabel(int count, int limit);
+
+  /// Scenes HD banner subtitle — variant about extra media types.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock films, music, and places.'**
+  String get hdBannerBenefitMedia;
+
+  /// Scenes HD banner subtitle — variant about higher per-scene moment cap.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to 100 moments in every scene.'**
+  String get hdBannerBenefitMoments;
 }
 
 class _AppLocalizationsDelegate

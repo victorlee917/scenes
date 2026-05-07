@@ -8,8 +8,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/floating_bottom_sheet.dart';
-import '../home/home_view_model.dart';
+import '../auth/auth_view_model.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
@@ -80,25 +81,55 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     );
   }
 
+  /// 기술적 에러 메시지를 유저 친화적 문구로 정리. 사용자 취소는 toast 자체를
+  /// 띄우지 않기 위해 null 반환.
+  String? _humanizeAuthError(String raw) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('cancel')) return null;
+    if (lower.contains('network') ||
+        lower.contains('socket') ||
+        lower.contains('host')) {
+      return 'Check your connection and try again.';
+    }
+    return 'Sign in failed. Please try again.';
+  }
+
   void _showLoginSheet() {
     FloatingBottomSheet.show(
       context: context,
       builder: (_) => _LoginSheet(
-        onLogin: () {
+        onApple: () {
           Navigator.of(context).pop();
-          _showAgreementSheet();
+          _showAgreementSheet(_LoginProvider.apple);
+        },
+        onGoogle: () {
+          Navigator.of(context).pop();
+          _showAgreementSheet(_LoginProvider.google);
+        },
+        onKakao: () {
+          Navigator.of(context).pop();
+          _showAgreementSheet(_LoginProvider.kakao);
         },
       ),
     );
   }
 
-  void _showAgreementSheet() {
+  void _showAgreementSheet(_LoginProvider provider) {
     FloatingBottomSheet.show(
       context: context,
       builder: (_) => _AgreementSheet(
         onAgree: () {
           Navigator.of(context).pop();
-          ref.read(homeViewModelProvider.notifier).setLoggedIn(true);
+          // 동의 후 실제 소셜 로그인. 세션 생기면 router가 자동 redirect.
+          final notifier = ref.read(authViewModelProvider.notifier);
+          switch (provider) {
+            case _LoginProvider.apple:
+              notifier.signInWithApple();
+            case _LoginProvider.google:
+              notifier.signInWithGoogle();
+            case _LoginProvider.kakao:
+              notifier.signInWithKakao();
+          }
         },
       ),
     );
@@ -107,6 +138,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+
+    // 로그인 실패 시 앱 톤에 맞는 blur toast로 안내. 사용자 취소(cancel)는 무시.
+    ref.listen(authViewModelProvider.select((s) => s.error), (prev, next) {
+      if (next == null || next.isEmpty) return;
+      final humanized = _humanizeAuthError(next);
+      if (humanized == null) return;
+      AppToast.show(context, humanized);
+    });
 
     return Scaffold(
       body: Stack(
@@ -154,15 +193,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                       children: [
                         SizedBox(height: padding.top + 80),
 
-                        // 쌍안경 로고
-                        ClipPath(
-                          clipper: _BinocularClipper(),
-                          child: Container(
-                            width: 100,
-                            height: 60,
-                            color: context.colors.foreground
-                                .withValues(alpha: 0.12),
-                          ),
+                        // 쌍안경 로고. PNG에 배경이 baked-in이라 다크/라이트
+                        // 별도 에셋 사용 — 각각의 앱 배경색과 톤이 맞춤.
+                        Image.asset(
+                          Theme.of(context).brightness == Brightness.dark
+                              ? 'assets/logo/logo_dark.png'
+                              : 'assets/logo/logo_light.png',
+                          width: 96,
+                          height: 96,
                         ),
                         const SizedBox(height: 28),
 
@@ -246,26 +284,20 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   }
 }
 
-class _BinocularClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size size) {
-    final r = size.height / 2;
-    final leftCenter = Offset(r, r);
-    final rightCenter = Offset(size.width - r, r);
-    final path = Path()
-      ..addOval(Rect.fromCircle(center: leftCenter, radius: r))
-      ..addOval(Rect.fromCircle(center: rightCenter, radius: r));
-    return path;
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
-}
+/// 어떤 소셜 프로바이더로 로그인할지 결정하는 enum. 동의 시트가 닫힌 후
+/// 분기 위해 사용.
+enum _LoginProvider { apple, google, kakao }
 
 class _LoginSheet extends StatelessWidget {
-  const _LoginSheet({required this.onLogin});
+  const _LoginSheet({
+    required this.onApple,
+    required this.onGoogle,
+    required this.onKakao,
+  });
 
-  final VoidCallback onLogin;
+  final VoidCallback onApple;
+  final VoidCallback onGoogle;
+  final VoidCallback onKakao;
 
   @override
   Widget build(BuildContext context) {
@@ -288,13 +320,13 @@ class _LoginSheet extends StatelessWidget {
               _LoginButton(
                 icon: FontAwesomeIcons.apple,
                 label: 'Continue with Apple',
-                onTap: onLogin,
+                onTap: onApple,
               ),
               const SizedBox(height: 10),
               _LoginButton(
                 icon: FontAwesomeIcons.google,
                 label: 'Continue with Google',
-                onTap: onLogin,
+                onTap: onGoogle,
               ),
               const SizedBox(height: 10),
               // TODO: swap to a proper Kakao logo asset when adding the brand
@@ -302,7 +334,7 @@ class _LoginSheet extends StatelessWidget {
               _LoginButton(
                 icon: FontAwesomeIcons.solidComment,
                 label: 'Continue with Kakao',
-                onTap: onLogin,
+                onTap: onKakao,
               ),
             ],
           ),
@@ -322,37 +354,42 @@ class _LoginButton extends StatelessWidget {
 
   final FaIconData icon;
   final String label;
-  final VoidCallback onTap;
+
+  /// null이면 비활성 (반투명 + 탭 무시).
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final disabled = onTap == null;
+    final fg = disabled
+        ? context.colors.foreground.withValues(alpha: 0.35)
+        : context.colors.foreground;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          borderRadius: AppRadii.sheetInnerBorder,
-          color: context.colors.nonClickableArea,
-          border: Border.all(
-            color: context.colors.foreground.withValues(alpha: 0.06),
-            width: 0.5,
+      child: Opacity(
+        opacity: disabled ? 0.6 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: AppRadii.sheetInnerBorder,
+            color: context.colors.nonClickableArea,
+            border: Border.all(
+              color: context.colors.foreground.withValues(alpha: 0.06),
+              width: 0.5,
+            ),
           ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            FaIcon(
-              icon,
-              size: 16,
-              color: context.colors.foreground,
-            ),
-            const SizedBox(width: 10),
-            Text(
-              label,
-              style: AppTypography.body(15, weight: FontWeight.w500)
-                  .copyWith(color: context.colors.foreground),
-            ),
-          ],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              FaIcon(icon, size: 16, color: fg),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: AppTypography.body(15, weight: FontWeight.w500)
+                    .copyWith(color: fg),
+              ),
+            ],
+          ),
         ),
       ),
     );

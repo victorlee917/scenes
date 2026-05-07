@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../l10n/app_localizations.dart';
+import '../auth/auth_view_model.dart';
 import '../home/widgets/detail_app_bar.dart';
+import '../onboarding/noti_prompt_screen.dart';
+import 'danger_zone_screen.dart';
 import 'notifications_screen.dart';
 import 'theme_screen.dart';
 
@@ -19,7 +24,7 @@ import 'theme_screen.dart';
 /// - Account: 로그아웃, 탈퇴
 ///
 /// 각 항목은 아직 동작을 연결하지 않았음.
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   static Route<void> route() {
@@ -29,10 +34,10 @@ class SettingsScreen extends StatefulWidget {
   }
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen> {
+class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   double _borderOpacity = 0.0;
 
   bool _onScroll(ScrollNotification n) {
@@ -43,10 +48,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return false;
   }
 
+  /// auth.users.created_at 문자열을 "Joined May 3, 2026" / "2026년 5월 3일 가입"
+  /// 형태로 변환. null/파싱 실패 시 빈 문자열.
+  String _formatJoinedDate(String? createdAt, String localeTag) {
+    if (createdAt == null) return '';
+    final dt = DateTime.tryParse(createdAt);
+    if (dt == null) return '';
+    final isKorean = localeTag.startsWith('ko');
+    if (isKorean) {
+      return DateFormat('yyyy년 M월 d일 가입', 'ko').format(dt);
+    }
+    return 'Joined ${DateFormat('MMM d, yyyy', 'en_US').format(dt)}';
+  }
+
+  /// 가장 최근 사용한 provider 또는 첫 identity 기준으로 아이콘 결정.
+  /// Supabase는 마지막 로그인 provider를 `app_metadata.provider`에 둠.
+  FaIconData _providerIcon(User? user) {
+    final provider = user?.appMetadata['provider'] as String?;
+    switch (provider) {
+      case 'apple':
+        return FontAwesomeIcons.apple;
+      case 'google':
+        return FontAwesomeIcons.google;
+      case 'kakao':
+        return FontAwesomeIcons.solidComment;
+      default:
+        return FontAwesomeIcons.user;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
     final l10n = AppLocalizations.of(context);
+    final user = ref.watch(authViewModelProvider.select((s) => s.session?.user));
+    final localeTag = Localizations.localeOf(context).toLanguageTag();
 
     return Scaffold(
       // backgroundColor handled by theme
@@ -62,9 +98,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 _SectionHeader(label: 'Account'),
                 _AccountTile(
-                  email: 'scenes@example.com',
-                  joinedDate: 'Joined Apr 3, 2025',
-                  providerIcon: FontAwesomeIcons.google,
+                  email: user?.email ?? '',
+                  joinedDate: _formatJoinedDate(user?.createdAt, localeTag),
+                  providerIcon: _providerIcon(user),
                 ),
                 const SizedBox(height: 24),
                 _SectionHeader(label: l10n.settingsSectionPreferences),
@@ -78,6 +114,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   label: l10n.settingsPushNotifications,
                   onTap: () {
                     Navigator.of(context).push(NotificationsScreen.route());
+                  },
+                ),
+                // [DEBUG] noti-prompt 화면 디자인 미리보기용. 확인 끝나면 삭제.
+                _SettingsTile(
+                  label: 'Preview noti prompt',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const NotiPromptScreen(),
+                      ),
+                    );
                   },
                 ),
                 const SizedBox(height: 24),
@@ -107,38 +154,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _SectionHeader(label: l10n.settingsSectionAccount),
                 _SettingsTile(
                   label: l10n.settingsLogout,
-                  onTap: () {},
-                ),
-                _SettingsTile(
-                  label: l10n.settingsDisconnect,
-                  isDestructive: true,
                   onTap: () async {
                     final confirmed = await ConfirmDialog.show(
                       context: context,
-                      title: 'Disconnect?',
-                      message: 'You and your person will be unpaired.',
-                      confirmLabel: 'Disconnect',
-                      isDestructive: true,
+                      title: 'Sign out?',
+                      message: 'You will need to sign in again to use Scenes.',
+                      confirmLabel: 'Sign out',
                     );
-                    if (confirmed) {
-                      // TODO: disconnect 처리
-                    }
+                    if (!confirmed || !context.mounted) return;
+                    await ref
+                        .read(authViewModelProvider.notifier)
+                        .signOut();
+                    // signOut 후 router의 isLoggedIn watcher가 false로 바뀌어
+                    // onboarding으로 자동 redirect.
                   },
                 ),
                 _SettingsTile(
-                  label: l10n.settingsDeleteAccount,
+                  label: l10n.settingsDangerZone,
                   isDestructive: true,
-                  onTap: () async {
-                    final confirmed = await ConfirmDialog.show(
-                      context: context,
-                      title: 'Delete account?',
-                      message: 'All your data will be permanently deleted.',
-                      confirmLabel: 'Delete',
-                      isDestructive: true,
-                    );
-                    if (confirmed) {
-                      // TODO: delete account 처리
-                    }
+                  onTap: () {
+                    Navigator.of(context).push(DangerZoneScreen.route());
                   },
                 ),
               ],

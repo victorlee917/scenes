@@ -36,11 +36,13 @@ class AddSceneCard extends StatelessWidget {
                   color: context.colors.hairline,
                   width: 1,
                 ),
+                // SceneCard와 동일.
                 boxShadow: [
                   BoxShadow(
-                    color: context.colors.scrimSolid,
-                    blurRadius: 48,
-                    offset: const Offset(0, 22),
+                    color: context.colors.shadow,
+                    blurRadius: 40,
+                    spreadRadius: -20,
+                    offset: const Offset(0, 24),
                   ),
                 ],
               ),
