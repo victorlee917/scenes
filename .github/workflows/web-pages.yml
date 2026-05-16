@@ -5,6 +5,7 @@ name: Deploy web to GitHub Pages
 #
 # 전제: 레포 Settings → Pages → Source = "GitHub Actions" 설정 필요 (한 번만).
 # 배포 URL: https://<user>.github.io/<repo>/  (현재: scenes 레포 → /scenes/ base).
+# 초기 셋업 완료 후 첫 정상 배포.
 
 on:
   push:
