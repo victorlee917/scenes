@@ -11,7 +11,13 @@ import type { Route } from "./+types/root";
 import "./app.css";
 import "./lib/i18n/i18n";
 
+// 폰트는 Flutter 앱과 톤을 통일.
+//   - 본문(sans): Pretendard — 한글/영문 모두 균형 좋은 변형. 정식 CDN(jsdelivr)
+//     에서 variable 버전 로드.
+//   - 디스플레이(display): Playfair Display — 영문 제목용 세리프. 향후 KR 로케일
+//     추가 시 Hahmlet도 같이 등록할 예정.
 export const links: Route.LinksFunction = () => [
+  { rel: "preconnect", href: "https://cdn.jsdelivr.net", crossOrigin: "anonymous" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
     rel: "preconnect",
@@ -20,7 +26,11 @@ export const links: Route.LinksFunction = () => [
   },
   {
     rel: "stylesheet",
-    href: "https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap",
+    href: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css",
+  },
+  {
+    rel: "stylesheet",
+    href: "https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap",
   },
 ];
 

@@ -4,8 +4,16 @@
 
 /* 디자인 토큰 — 한 곳에서만 정의한다. 컴포넌트에서는 토큰 utility만 사용. */
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif,
-    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  /* 본문(sans) — Flutter 앱의 Pretendard와 일치. KR/EN 양쪽 가독성 균형이
+     좋아 사이트 전반의 안전한 기본값. variable 폰트라 weight 분기 비용 없음. */
+  --font-sans: "Pretendard Variable", "Pretendard", -apple-system,
+    BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol", "Noto Color Emoji";
+  /* 디스플레이(display) — Flutter 앱의 PlayfairDisplay와 일치. 영문 제목/
+     히어로용 세리프. Tailwind v4가 `--font-display`를 `font-display`
+     utility로 자동 노출. */
+  --font-display: "Playfair Display", Cambria, "Times New Roman", Times, serif;
 
   --color-brand: oklch(0.55 0.18 295);
   --color-background: var(--color-background-current);

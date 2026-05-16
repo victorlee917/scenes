@@ -1,9 +1,19 @@
 {
   "app": {
     "title": "Scenes",
-    "description": "Scenes"
+    "description": "Memories you keep, together."
   },
-  "home": {
-    "greeting": "Supabase ready."
+  "onboarding": {
+    "tagline": "Memories you keep, together.",
+    "downloadAppStore": "Download on the App Store",
+    "downloadPlayStore": "Get it on Google Play",
+    "playStoreComingSoon": "Coming soon to Google Play."
+  },
+  "footer": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service"
+  },
+  "legal": {
+    "back": "Back"
   }
 }
