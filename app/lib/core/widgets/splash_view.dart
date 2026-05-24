@@ -11,7 +11,9 @@ class SplashView extends StatelessWidget {
   const SplashView({super.key});
 
   static const _splashColor = Color(0xFF151517);
-  static const _logoSize = 192.0;
+  // 네이티브 splash 이미지(LaunchImage.png 1x=256/2x=512/3x=768 → logical 256pt)
+  // 와 동일한 크기. 안 맞추면 native→in-app 전환 시 로고가 바뀌는 인상.
+  static const _logoSize = 256.0;
 
   @override
   Widget build(BuildContext context) {

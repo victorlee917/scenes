@@ -53,33 +53,23 @@ class AuthViewModel extends Notifier<AppAuthState> {
     return initial;
   }
 
-  Future<void> signInWithKakao() async {
-    if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      await ref.read(authRepositoryProvider).signInWithKakao();
-      state = state.copyWith(isLoading: false);
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
-    }
-  }
+  Future<void> signInWithKakao() =>
+      _signIn((repo) => repo.signInWithKakao());
 
-  Future<void> signInWithGoogle() async {
-    if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null);
-    try {
-      await ref.read(authRepositoryProvider).signInWithGoogle();
-      state = state.copyWith(isLoading: false);
-    } catch (e) {
-      state = state.copyWith(isLoading: false, error: e.toString());
-    }
-  }
+  Future<void> signInWithGoogle() =>
+      _signIn((repo) => repo.signInWithGoogle());
 
-  Future<void> signInWithApple() async {
+  Future<void> signInWithApple() =>
+      _signIn((repo) => repo.signInWithApple());
+
+  /// 세 OAuth 프로바이더 공통 흐름 — isLoading 가드 + 에러 캡처.
+  Future<void> _signIn(
+    Future<void> Function(AuthRepository repo) run,
+  ) async {
     if (state.isLoading) return;
     state = state.copyWith(isLoading: true, error: null);
     try {
-      await ref.read(authRepositoryProvider).signInWithApple();
+      await run(ref.read(authRepositoryProvider));
       state = state.copyWith(isLoading: false);
     } catch (e) {
       state = state.copyWith(isLoading: false, error: e.toString());

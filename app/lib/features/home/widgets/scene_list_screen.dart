@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/widgets/floating_action_sheet.dart';
 import '../../../l10n/app_localizations.dart';
@@ -9,6 +8,7 @@ import '../../../core/theme/app_typography.dart';
 import '../formatters.dart';
 import '../home_view_model.dart';
 import '../models/scene.dart';
+import '../../scene/scenes_view_model.dart';
 import '../../subscription/subscription_screen.dart';
 import '../../subscription/subscription_view_model.dart';
 import 'detail_app_bar.dart';
@@ -65,8 +65,9 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
   }
 
   Future<void> _handleRefresh() async {
-    // TODO: Supabase에서 scene 데이터 다시 로드
-    await Future<void>.delayed(const Duration(milliseconds: 600));
+    // scenes를 백엔드에서 다시 로드. softRefresh는 loading 상태로 전환하지
+    // 않아 RefreshIndicator 스피너만 도는 동안 리스트가 깜빡이지 않는다.
+    await ref.read(scenesProvider.notifier).softRefresh();
   }
 
   /// 라이브 provider 데이터 — reorder/생성/삭제 후 즉시 반영. 초기 인자(widget
@@ -137,12 +138,16 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
               itemCount: _editableScenes.length,
               itemBuilder: (context, index) {
                     final scene = _editableScenes[index];
-                    return _SceneListTile(
+                    // 타일 어디든 누르고 드래그하면 reorder. 작은 핸들 아이콘은
+                    // 단순 시각 힌트로 남기고 드래그 영역은 타일 전체.
+                    return ReorderableDragStartListener(
                       key: ValueKey(scene.id),
-                      scene: scene,
-                      onTap: () {},
-                      showDragHandle: true,
                       index: index,
+                      child: _SceneListTile(
+                        scene: scene,
+                        onTap: () {},
+                        showDragHandle: true,
+                      ),
                     );
                   },
                 )
@@ -170,6 +175,14 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
                                 canisterSize: canisterSize,
                               ),
                             );
+                          },
+                          // 길게 누르면 reorder 모드 진입 (HD 한정). 무료
+                          // 회원은 무반응 — 더보기 메뉴의 "Edit Order" 항목이
+                          // SubscriptionScreen으로 라우팅하니 거기서 유도.
+                          onLongPress: () {
+                            if (ref.read(isSubscribedProvider)) {
+                              _enterEditMode();
+                            }
                           },
                         );
                       },
@@ -229,7 +242,18 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
                             label: l10n.sceneListEditOrder,
                             badge: ref.read(isSubscribedProvider) ? null : 'HD',
                             onTap: () {
-                              if (ref.read(isSubscribedProvider)) {
+                              // sub 상태가 아직 RPC 미응답이면 무시 — false
+                              // fallback으로 HD user를 잘못 무료로 판단해
+                              // SubscriptionScreen 보내는 race 방지.
+                              final subAsync =
+                                  ref.read(subscriptionViewModelProvider);
+                              if (subAsync.isLoading || !subAsync.hasValue) {
+                                return;
+                              }
+                              final isHd = subAsync.valueOrNull
+                                      ?.isSubscribed ??
+                                  false;
+                              if (isHd) {
                                 _enterEditMode();
                               } else {
                                 Navigator.of(context).push(
@@ -251,17 +275,16 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
 
 class _SceneListTile extends StatelessWidget {
   const _SceneListTile({
-    super.key,
     required this.scene,
     required this.onTap,
+    this.onLongPress,
     this.showDragHandle = false,
-    this.index = 0,
   });
 
   final Scene scene;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
   final bool showDragHandle;
-  final int index;
 
   static const double _thumbSize = 56;
 
@@ -277,6 +300,7 @@ class _SceneListTile extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Row(
@@ -345,15 +369,14 @@ class _SceneListTile extends StatelessWidget {
               ),
             ),
             if (showDragHandle)
-              ReorderableDragStartListener(
-                index: index,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: Icon(
-                    Icons.drag_handle,
-                    size: 20,
-                    color: context.colors.foregroundMuted,
-                  ),
+              // 시각 힌트만 — 실제 드래그 트리거는 부모의
+              // ReorderableDragStartListener가 타일 전체에 걸려 있음.
+              Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: Icon(
+                  Icons.drag_handle,
+                  size: 20,
+                  color: context.colors.foregroundMuted,
                 ),
               )
             else if (scene.media.total > 0)

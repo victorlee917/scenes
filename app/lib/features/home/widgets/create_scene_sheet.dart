@@ -11,6 +11,8 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../../core/widgets/primary_action_button.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../scene/scenes_view_model.dart';
 import '../models/scene.dart';
 import 'scene_detail_screen.dart';
@@ -68,6 +70,7 @@ class _CreateSceneSheetState extends ConsumerState<CreateSceneSheet> {
 
   Future<void> _pickCoverImage() async {
     if (_picking) return;
+    final cropTitle = AppLocalizations.of(context).imageCropperTitle;
     setState(() => _picking = true);
     try {
       final picked = await _picker.pickImage(
@@ -87,12 +90,12 @@ class _CreateSceneSheetState extends ConsumerState<CreateSceneSheet> {
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           IOSUiSettings(
-            title: 'Crop',
+            title: cropTitle,
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
           ),
           AndroidUiSettings(
-            toolbarTitle: 'Crop',
+            toolbarTitle: cropTitle,
             lockAspectRatio: true,
             hideBottomControls: true,
           ),
@@ -147,16 +150,20 @@ class _CreateSceneSheetState extends ConsumerState<CreateSceneSheet> {
           );
         }
       });
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
-        AppToast.show(context, 'Failed to save scene.');
+        AppToast.show(
+          context,
+          AppLocalizations.of(context).createSceneSaveFailed,
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -260,7 +267,7 @@ class _CreateSceneSheetState extends ConsumerState<CreateSceneSheet> {
                 color: context.colors.foreground,
               ),
               decoration: InputDecoration(
-                hintText: 'Scene title',
+                hintText: l10n.createSceneTitleHint,
                 hintStyle: AppTypography.body(15).copyWith(
                   color: context.colors.foregroundMuted.withValues(alpha: 0.5),
                 ),
@@ -279,44 +286,12 @@ class _CreateSceneSheetState extends ConsumerState<CreateSceneSheet> {
         // 생성 버튼
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: SizedBox(
-            width: double.infinity,
-            child: GestureDetector(
-              onTap: (_hasTitle && !_saving) ? _submit : null,
-              child: AnimatedOpacity(
-                opacity: _hasTitle ? 1.0 : 0.4,
-                duration: const Duration(milliseconds: 200),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: AppRadii.sheetInnerBorder,
-                    color: context.colors.foreground,
-                  ),
-                  alignment: Alignment.center,
-                  // 고정 높이로 spinner ↔ text 전환 시 layout 흔들림 방지.
-                  child: SizedBox(
-                    height: 22,
-                    child: Center(
-                      child: _saving
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.colors.background,
-                              ),
-                            )
-                          : Text(
-                              widget.isEditing ? 'Save' : 'Create',
-                              style: AppTypography.body(16,
-                                      weight: FontWeight.w600)
-                                  .copyWith(color: context.colors.background),
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          child: PrimaryActionButton(
+            label:
+                widget.isEditing ? l10n.actionSave : l10n.createSceneCreate,
+            enabled: _hasTitle,
+            loading: _saving,
+            onTap: _submit,
           ),
         ),
 

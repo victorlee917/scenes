@@ -1,11 +1,9 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/app_colors_ext.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_typography.dart';
+import 'glass_panel.dart';
 
 /// 플로팅 원형(pill-radius) 바텀 시트.
 ///
@@ -42,36 +40,24 @@ class FloatingActionSheet extends StatelessWidget {
         right: 16,
         bottom: padding.bottom + 16,
       ),
-      child: ClipRRect(
+      child: GlassPanel(
         borderRadius: AppRadii.sheetBorder,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.colors.clickableArea.withValues(alpha: 0.82),
-              borderRadius: AppRadii.sheetBorder,
-              border: Border.all(
-                color: context.colors.foreground.withValues(alpha: 0.08),
-                width: 0.5,
-              ),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (int i = 0; i < items.length; i++) ...[
-                  _ActionTile(item: items[i]),
-                  if (i < items.length - 1)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Container(
-                        height: 0.5,
-                        color: context.colors.foreground.withValues(alpha: 0.06),
-                      ),
-                    ),
-                ],
-              ],
-            ),
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (int i = 0; i < items.length; i++) ...[
+              _ActionTile(item: items[i]),
+              if (i < items.length - 1)
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    height: 0.5,
+                    color:
+                        context.colors.foreground.withValues(alpha: 0.06),
+                  ),
+                ),
+            ],
+          ],
         ),
       ),
     );

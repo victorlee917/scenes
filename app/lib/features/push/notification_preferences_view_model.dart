@@ -11,7 +11,8 @@ class NotificationPreferencesViewModel
     extends AsyncNotifier<NotificationPreferences?> {
   @override
   Future<NotificationPreferences?> build() async {
-    ref.watch(authViewModelProvider.select((s) => s.session));
+    // user.id만 관찰 — 토큰 갱신으로 Session 객체만 바뀔 땐 refetch하지 않게.
+    ref.watch(authViewModelProvider.select((s) => s.session?.user.id));
     return ref.read(notificationPreferencesRepositoryProvider).getMy();
   }
 
@@ -32,10 +33,11 @@ class NotificationPreferencesViewModel
     try {
       final saved = await repo.upsert(next);
       state = AsyncValue<NotificationPreferences?>.data(saved);
-    } catch (e, st) {
-      // 실패 시 이전 상태로 롤백.
+    } catch (_) {
+      // 저장 실패 — 낙관적 변경을 되돌린다(토글이 실제 값으로 되돌아옴).
+      // provider를 error 상태로 만들면 화면이 토글 대신 에러 문구로 통째
+      // 바뀌므로 data(current)로만 롤백한다.
       state = AsyncValue<NotificationPreferences?>.data(current);
-      state = AsyncValue.error(e, st);
     }
   }
 

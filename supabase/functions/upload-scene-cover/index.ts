@@ -1,10 +1,11 @@
 // upload-scene-cover
 //
-// Authenticated client posts JPEG bytes for a scene's cover image.
+// Authenticated client posts WebP (preferred) or JPEG bytes for a scene's
+// cover image. Format detected from magic bytes — Content-Type header is
+// ignored.
 // Headers:
 //   - Authorization: Bearer <user JWT>
 //   - X-Scene-Id:    <scene UUID>
-//   - Content-Type:  image/jpeg
 //
 // 1. Verify caller is a member of an active couple containing this scene.
 // 2. Upload to scene_media/<pair_id>/<scene_id>/cover.jpg via service role
@@ -53,11 +54,23 @@ Deno.serve(async (req) => {
   }
   const pairId = sceneRow.pair_id as string;
 
-  // 2) bytes.
+  // 2) bytes + magic byte 검출. Content-Type header는 spoof 가능해 무시.
   const bytes = new Uint8Array(await req.arrayBuffer());
   if (bytes.byteLength === 0) {
     return new Response("Empty body", { status: 400 });
   }
+  const isJpeg = bytes.length >= 3 &&
+    bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isWebp = bytes.length >= 12 &&
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 &&
+    bytes[11] === 0x50;
+  if (!isJpeg && !isWebp) {
+    return new Response("Body must be JPEG or WebP", { status: 400 });
+  }
+  const ext = isWebp ? "webp" : "jpg";
+  const mime = isWebp ? "image/webp" : "image/jpeg";
 
   // 3) service role로 upload + scenes UPDATE.
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -69,11 +82,11 @@ Deno.serve(async (req) => {
     serviceKey,
   );
 
-  const path = `${pairId}/${sceneId}/cover.jpg`;
+  const path = `${pairId}/${sceneId}/cover.${ext}`;
   const { error: uploadError } = await adminClient.storage
     .from("scene_media")
     .upload(path, bytes, {
-      contentType: "image/jpeg",
+      contentType: mime,
       upsert: true,
     });
   if (uploadError) {
@@ -82,6 +95,12 @@ Deno.serve(async (req) => {
       status: 500,
     });
   }
+  // 포맷이 바뀌어도(JPEG ↔ WebP) 파일명이 달라져 옛 파일 orphan 방지 —
+  // 반대 확장자 객체는 best-effort로 정리.
+  const oppositePath = `${pairId}/${sceneId}/cover.${ext === "webp" ? "jpg" : "webp"}`;
+  try {
+    await adminClient.storage.from("scene_media").remove([oppositePath]);
+  } catch (_) {}
 
   await adminClient
     .from("scenes")

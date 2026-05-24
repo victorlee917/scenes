@@ -17,12 +17,15 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/confirm_dialog.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../content/contents_view_model.dart';
 import '../../content/models/content.dart';
 import '../../share/data/share_frame_renderer.dart';
 import '../../share/data/video_composer.dart';
 import '../../share/widgets/share_frame_view.dart';
+import '../../share/widgets/snake_share_view.dart';
+import '../../share/widgets/stack_share_view.dart';
 import '../../subscription/subscription_screen.dart';
 import '../../subscription/subscription_view_model.dart';
 import '../models/scene.dart';
@@ -35,17 +38,17 @@ import 'scene_title_fallback.dart';
 class PlaySceneScreen extends ConsumerStatefulWidget {
   const PlaySceneScreen({
     super.key,
-    required this.scenes,
+    required this.scene,
     this.initialMediaTypes = const {'photo', 'film', 'music', 'place'},
   });
 
-  final List<Scene> scenes;
+  final Scene scene;
   // PlaySceneSheet가 토글한 매체 선택을 그대로 받아 초기 필터로 적용.
   // 화면 안의 _PlayFilterSheet에서 추후 변경 가능.
   final Set<String> initialMediaTypes;
 
   static Route<void> route({
-    required List<Scene> scenes,
+    required Scene scene,
     Set<String> initialMediaTypes = const {
       'photo',
       'film',
@@ -59,7 +62,7 @@ class PlaySceneScreen extends ConsumerStatefulWidget {
       reverseTransitionDuration: Duration.zero,
       pageBuilder: (context, animation, secondaryAnimation) =>
           PlaySceneScreen(
-        scenes: scenes,
+        scene: scene,
         initialMediaTypes: initialMediaTypes,
       ),
       transitionsBuilder:
@@ -124,11 +127,20 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   int? _imageCacheCountBefore;
   PhotoFilter _photoFilter = PhotoFilter.normal;
   bool _paused = false;
+  // Shuffle 모드. on이면 _shuffledOrder의 다음 인덱스를 따라 진행하고 한
+  // 사이클 끝나면 재셔플. _applyFilter로 _playUrls 길이가 바뀌면 재생성.
+  bool _shuffle = false;
+  List<int> _shuffledOrder = const [];
+  int _shufflePos = 0;
   // Pause 중 좌우 tilt로 cover-fit된 사진의 가려진 영역을 들춰보는 parallax.
   // ValueNotifier로 두면 stream 업데이트가 ValueListenableBuilder만 리빌드하고
   // 화면 전체 setState 없이 alignment만 갱신할 수 있다.
   final ValueNotifier<double> _tiltX = ValueNotifier(0.0);
   StreamSubscription<AccelerometerEvent>? _accelSub;
+  // Filter/Share 등 바텀시트가 떠 있는 동안에는 tilt도 멈춰야 한다(시트 안의
+  // 미리보기·콘텐츠가 흔들리지 않도록). _paused만 보면 시트 표시 시에도
+  // tilt가 활성화돼서 의도와 어긋남.
+  bool _sheetOpen = false;
   int _playIndex = 0;
   int _infoIndex = 0;
   double _loadProgress = 0;
@@ -177,7 +189,7 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
     cache.maximumSizeBytes = 500 << 20; // 500 MiB
     cache.maximumSize = 5000;
 
-    _selectedSceneIds = widget.scenes.map((s) => s.id).toSet();
+    _selectedSceneIds = {widget.scene.id};
     _selectedMediaTypes = Set.of(widget.initialMediaTypes);
     _expandController = AnimationController(
       vsync: this,
@@ -210,8 +222,44 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   /// 멈춤·끊김 없이 자연스럽게 재생 모드로 이어진다.
   static const _autoCycleInterval = Duration(milliseconds: 750);
 
+  /// 로딩 중 디코드 완료된 인덱스를 누적하는 큐. 디코드가 750ms보다 빨리
+  /// 끝나도 사진이 휙 지나가지 않게 [_drainDisplayQueue]가 통일 간격으로
+  /// 1장씩 표시.
+  final List<int> _decodedQueue = [];
+  Timer? _displayTimer;
+
+  /// 디코드된 사진을 [_autoCycleInterval] 간격으로 1장씩 binocular에 표시.
+  /// 첫 호출은 즉시 첫 사진을 그리고, 이후는 timer로 dripfeed.
+  void _drainDisplayQueue() {
+    if (!mounted || _playing) {
+      _displayTimer?.cancel();
+      _displayTimer = null;
+      return;
+    }
+    if (_decodedQueue.isEmpty) {
+      _displayTimer?.cancel();
+      _displayTimer = null;
+      return;
+    }
+    final nextIdx = _decodedQueue.removeAt(0);
+    setState(() => _playIndex = nextIdx);
+    _displayTimer?.cancel();
+    _displayTimer = Timer(_autoCycleInterval, _drainDisplayQueue);
+  }
+
+  void _enqueueDecoded(int index) {
+    if (!mounted || _playing) return;
+    _decodedQueue.add(index);
+    // 첫 사진은 즉시 표시(빈 화면 시간 최소화), 이후 timer로 750ms 간격.
+    if (_displayTimer == null) _drainDisplayQueue();
+  }
+
   void _startAutoCycle() {
     _autoCycleTimer?.cancel();
+    // 디코드 큐 처리는 auto-cycle이 인계받음 — display timer 정리.
+    _displayTimer?.cancel();
+    _displayTimer = null;
+    _decodedQueue.clear();
     _autoCycleTimer = Timer.periodic(_autoCycleInterval, (_) {
       if (!mounted || _playing) return;
       // 필터 적용된 _playUrls가 있으면 그걸 기준 — 안 그러면 _playIndex가
@@ -237,13 +285,11 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   }
 
   void _precacheSceneCovers() {
-    for (final scene in widget.scenes) {
-      // cover 없는 scene이면 빈 string → NetworkImage('')가 file:/// URI로
-      // 파싱돼 "No host specified" 예외. 비어있으면 skip.
-      final url = scene.coverImageUrl;
-      if (url.isEmpty) continue;
-      precacheImage(NetworkImage(url), context);
-    }
+    // cover 없는 scene이면 빈 string → NetworkImage('')가 file:/// URI로
+    // 파싱돼 "No host specified" 예외. 비어있으면 skip.
+    final url = widget.scene.coverImageUrl;
+    if (url.isEmpty) return;
+    precacheImage(NetworkImage(url), context);
   }
 
   /// 선택된 Scene들의 contents를 순차로 로드. scene_summary가 알려주는
@@ -255,61 +301,179 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   /// 로딩 시퀀스가 휙 지나가 어색하니 [_minLoadingDuration] 보장.
   static const _minLoadingDuration = Duration(seconds: 3);
 
+  /// precacheImage 완료가 하나라도 무한히 늘어지면 사용자 대기시간이 폭주
+  /// 하므로 cap을 둠. 12장 초기 batch는 보통 2–4초면 충분.
+  static const _maxPrecacheWait = Duration(seconds: 15);
+
+  /// 진입 시 즉시 디코드해놓을 사진 수. 한 세션에서 사용자가 실제로 보는
+  /// 평균이 5~10장이라 12장이면 첫 cycle 동안 충분. 나머지는 재생 진행에
+  /// 따라 [_ensureLookAheadPrecache]가 점진 디코드 → 한 세션 egress 80%↓.
+  static const _initialPrefetchCount = 12;
+
+  /// 현재 _playIndex 기준 미리 디코드해둘 향후 사진 수. 재생 속도(750ms/장)
+  /// 와 디코드 시간(보통 200~500ms)을 고려해 10장이면 셔플 첫 사이클에서도
+  /// 충분히 한 발 앞서 디코드가 끝남.
+  static const _lookAheadCount = 10;
+
+  /// 다음 frame이 decode될 때까지 750ms 후 advance를 늦출 수 있는 최대 시간.
+  /// 이걸 넘어가면 디코드를 포기하고 advance — 사용자가 영원히 멈춘 상태로
+  /// 두지는 않음.
+  static const _maxAdvanceWaitForDecode = Duration(seconds: 2);
+
+  /// 이미 precache 호출이 들어간 URL 집합. 중복 호출 방지.
+  final Set<String> _precachedUrls = {};
+
+  /// 디코드(precache)가 끝난 URL — `_scheduleNextContent`가 다음 frame이
+  /// 준비됐는지 빠르게 체크할 때 사용.
+  final Set<String> _decodedUrls = {};
+
+  /// URL별 디코드 완료 신호. waiter가 `await`해서 디코드가 끝났을 때 깨어남.
+  /// 실패 케이스도 complete()로 풀어 무한 대기 방지.
+  final Map<String, Completer<void>> _decodeCompleters = {};
+
+  /// 단일 URL의 precache 트리거 — 중복은 무시. 실패는 silently catch.
+  /// 디코드 완료/실패를 [_decodedUrls] / [_decodeCompleters]에 반영해
+  /// `_waitForDecode`가 깨어날 수 있게.
+  void _kickOffPrecache(String url) {
+    if (_precachedUrls.contains(url)) return;
+    final provider = _imageProviders[url];
+    if (provider == null) return;
+    _precachedUrls.add(url);
+    final completer =
+        _decodeCompleters.putIfAbsent(url, () => Completer<void>());
+    // ignore: discarded_futures
+    precacheImage(provider, context).then((_) {
+      _decodedUrls.add(url);
+      if (!completer.isCompleted) completer.complete();
+    }).catchError((_) {
+      // 실패해도 waiter는 깨워 줘야 advance가 무한히 지연되지 않음.
+      if (!completer.isCompleted) completer.complete();
+    });
+  }
+
+  /// 다음에 보여줄 URL — `_scheduleNextContent`가 advance 직전에 호출.
+  /// shuffle on이면 _shuffledOrder의 다음 항목, 아니면 sequential.
+  String? _peekNextUrl() {
+    if (_playUrls.isEmpty) return null;
+    final len = _playUrls.length;
+    final int nextIdx;
+    if (_shuffle && _shuffledOrder.length == len) {
+      nextIdx = _shuffledOrder[(_shufflePos + 1) % len];
+    } else {
+      nextIdx = (_playIndex + 1) % len;
+    }
+    if (nextIdx < 0 || nextIdx >= len) return null;
+    return _playUrls[nextIdx];
+  }
+
+  /// [url] 디코드가 끝날 때까지 최대 [timeout] 대기. 이미 끝났으면 즉시
+  /// 반환. 시간 초과면 그냥 통과(advance가 stale 이미지 위로 진행되지만
+  /// 무한 멈춤은 아님).
+  Future<void> _waitForDecode(String url, Duration timeout) async {
+    if (_decodedUrls.contains(url)) return;
+    final completer = _decodeCompleters[url];
+    if (completer == null || completer.isCompleted) return;
+    try {
+      await completer.future.timeout(timeout, onTimeout: () {});
+    } catch (_) {}
+  }
+
+  /// 현재 재생 위치 기준 향후 [_lookAheadCount]장의 사진을 미리 디코드.
+  /// shuffle이면 [_shuffledOrder]의 다음 항목들을 따라가고, 아니면 sequential.
+  void _ensureLookAheadPrecache() {
+    if (_playUrls.isEmpty) return;
+    final len = _playUrls.length;
+    for (var k = 1; k <= _lookAheadCount; k++) {
+      final int next;
+      if (_shuffle && _shuffledOrder.length == len) {
+        next = _shuffledOrder[(_shufflePos + k) % len];
+      } else {
+        next = (_playIndex + k) % len;
+      }
+      if (next < 0 || next >= _playUrls.length) continue;
+      _kickOffPrecache(_playUrls[next]);
+    }
+  }
+
   Future<void> _loadContent() async {
     final startedAt = DateTime.now();
-    final total = widget.scenes.length;
     final repo = ref.read;
+    // 초기 진입용 precache Future만 수집. 나머지는 _ensureLookAheadPrecache가
+    // 재생 진행에 따라 점진 디코드 — 한 번에 100장 다 받지 않아 egress
+    // 80%↓. 12장이면 첫 cycle 충분 + min duration 안에 끝남.
+    final initialPrecaches = <Future<void>>[];
 
-    for (int s = 0; s < total; s++) {
-      if (!mounted) return;
-      setState(() => _currentLoadingIndex = s);
+    if (!mounted) return;
+    setState(() => _currentLoadingIndex = 0);
 
-      final scene = widget.scenes[s];
-      List<Content> contents;
-      try {
-        contents = await repo(contentsForSceneProvider(scene.id).future);
-      } catch (_) {
-        contents = const [];
-      }
-
-      for (final content in contents) {
-        if (!mounted) return;
-        final fullUrl = content.fullSignedUrl;
-        if (fullUrl == null || fullUrl.isEmpty) continue;
-        final thumbUrl = content.thumbSignedUrl ?? fullUrl;
-
-        final provider = NetworkImage(fullUrl);
-        _imageProviders[fullUrl] = provider;
-        _allPlayUrls.add(fullUrl);
-        _allPlaySceneIndex.add(s);
-        // photo는 EXIF taken_at이 occurredAt에 들어감, 그 외는 createdAt fallback.
-        _allPlayDates.add(content.occurredAt ?? content.createdAt);
-        _allMediaTypes.add(content.type);
-        _allContents.add(content);
-        precacheImage(provider, context);
-
-        if (mounted) {
-          setState(() {
-            _loadedThumbs.add(thumbUrl);
-            // 새로 들어온 사진을 즉시 화면에 — 사진 로딩 진행을 따라 표시.
-            _playIndex = _allPlayUrls.length - 1;
-          });
-        }
-      }
-
-      if (!mounted) return;
-      setState(() {
-        _completedScenes.add(s);
-        _loadProgress = (s + 1) / total;
-      });
+    final scene = widget.scene;
+    List<Content> contents;
+    try {
+      contents = await repo(contentsForSceneProvider(scene.id).future);
+    } catch (_) {
+      contents = const [];
     }
+
+    for (final content in contents) {
+      if (!mounted) return;
+      final fullUrl = content.fullSignedUrl;
+      if (fullUrl == null || fullUrl.isEmpty) continue;
+      final thumbUrl = content.thumbSignedUrl ?? fullUrl;
+
+      final provider = NetworkImage(fullUrl);
+      _imageProviders[fullUrl] = provider;
+      _allPlayUrls.add(fullUrl);
+      // 단일 scene 재생이라 scene index는 항상 0 — 호환 유지를 위해 리스트는 둠.
+      _allPlaySceneIndex.add(0);
+      // photo는 EXIF taken_at이 occurredAt에 들어감, 그 외는 createdAt fallback.
+      _allPlayDates.add(content.occurredAt ?? content.createdAt);
+      _allMediaTypes.add(content.type);
+      _allContents.add(content);
+
+      // 초기 _initialPrefetchCount장만 즉시 precache. 디코드 완료된 인덱스
+      // 는 _decodedQueue에 적재 → display timer가 750ms 간격으로 1장씩
+      // binocular에 표시. 디코드가 빨라도 사진이 휙 지나가지 않음. 그 외
+      // 사진은 metadata만 저장 — 실제 디코드는 재생 진행에 따라
+      // _ensureLookAheadPrecache가 호출.
+      if (initialPrecaches.length < _initialPrefetchCount) {
+        final addedAtIndex = _allPlayUrls.length - 1;
+        _precachedUrls.add(fullUrl);
+        final completer = _decodeCompleters
+            .putIfAbsent(fullUrl, () => Completer<void>());
+        initialPrecaches.add(
+          precacheImage(provider, context).then((_) {
+            _decodedUrls.add(fullUrl);
+            if (!completer.isCompleted) completer.complete();
+            _enqueueDecoded(addedAtIndex);
+          }).catchError((_) {
+            // 실패해도 waiter는 깨움.
+            if (!completer.isCompleted) completer.complete();
+          }),
+        );
+      }
+
+      if (mounted) {
+        setState(() {
+          _loadedThumbs.add(thumbUrl);
+        });
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _completedScenes.add(0);
+      _loadProgress = 1.0;
+    });
 
     if (!mounted) return;
     _applyFilter();
     if (_playUrls.isEmpty) {
       // 콘텐츠가 아예 없거나, 필터로 다 걸러져서 재생할 게 없는 경우 토스트
       // 띄우고 화면 pop.
-      AppToast.show(context, 'No moments to play.');
+      AppToast.show(
+        context,
+        AppLocalizations.of(context).playSceneNoMomentsToast,
+      );
       Navigator.of(context).pop();
       return;
     }
@@ -319,12 +483,19 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
       // 흘러가다 _scheduleNextContent로 매끈하게 인계 (전환 끊김 없음).
       _startAutoCycle();
 
-      // 빠르게 끝나도 로딩 시퀀스가 휙 지나가면 어색 — _minLoadingDuration 보장.
+      // (1) 모든 사진 디코드 완료 + (2) _minLoadingDuration 보장. 둘 다 만족
+      // 해야 진행. (1)이 너무 늦어지면 _maxPrecacheWait로 cap해서 강제 진행.
       final elapsed = DateTime.now().difference(startedAt);
-      final remaining = _minLoadingDuration - elapsed;
-      if (remaining > Duration.zero) {
-        await Future<void>.delayed(remaining);
-      }
+      final minRemaining = _minLoadingDuration - elapsed;
+      final precacheAll = Future.wait(initialPrecaches).timeout(
+        _maxPrecacheWait,
+        onTimeout: () => const [],
+      );
+      await Future.wait<void>([
+        precacheAll,
+        if (minRemaining > Duration.zero)
+          Future<void>.delayed(minRemaining),
+      ]);
       if (!mounted) return;
       // 로딩 UI fade out 먼저 → 끝나면 expansion 시작. 두 모션이 겹치지 않게.
       setState(() => _loadingDismissed = true);
@@ -496,6 +667,9 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   void _startPlay() {
     setState(() => _expanding = true);
     _expandController.forward();
+    // 재생 진입 직후 look-ahead 시작 — _advancePlayIndex가 발화되기 전에도
+    // 첫 cycle 직후 표시될 사진들이 미리 디코드되어 있도록.
+    _ensureLookAheadPrecache();
   }
 
   void _togglePause() {
@@ -506,18 +680,72 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   void _scheduleNextContent() {
     if (!mounted || !_playing || _paused || _autoPlayScheduled) return;
     _autoPlayScheduled = true;
-    Future<void>.delayed(const Duration(milliseconds: 750), () {
+    Future<void>.delayed(const Duration(milliseconds: 750), () async {
       if (!mounted || !_playing || _paused) {
         _autoPlayScheduled = false;
         return;
       }
+      // 750ms 경과했더라도 다음 이미지가 decode 안 됐으면 잠시 더 대기 —
+      // 안 그러면 gaplessPlayback이 옛 이미지를 그대로 두다가 새 이미지가
+      // 늦게 들어와 짧게만 보이고 다음 tick에 다시 넘어가는 "씹힘" 발생.
+      final nextUrl = _peekNextUrl();
+      if (nextUrl != null && !_decodedUrls.contains(nextUrl)) {
+        _kickOffPrecache(nextUrl);
+        await _waitForDecode(nextUrl, _maxAdvanceWaitForDecode);
+      }
       _autoPlayScheduled = false;
-      setState(() {
-        _playIndex = (_playIndex + 1) % _playUrls.length;
-      });
+      if (!mounted || !_playing || _paused) return;
+      setState(_advancePlayIndex);
       HapticFeedback.selectionClick();
+      // 인덱스 진행에 따라 향후 N장 미리 디코드.
+      _ensureLookAheadPrecache();
       _scheduleNextContent();
     });
+  }
+
+  /// 다음 인덱스 결정 — shuffle on이면 _shuffledOrder의 다음 값,
+  /// off이면 순차. 한 사이클(= 한 바퀴, 모든 사진 1회씩)을 다 돌면 새
+  /// permutation으로 재셔플하되, 새 순서의 첫 장이 직전 장과 겹치지 않게 해
+  /// 사이클 경계에서 같은 사진이 연속으로 나오는 일이 없게 한다.
+  void _advancePlayIndex() {
+    if (_playUrls.isEmpty) return;
+    if (_shuffle && _shuffledOrder.length == _playUrls.length) {
+      _shufflePos = (_shufflePos + 1) % _shuffledOrder.length;
+      if (_shufflePos == 0) {
+        _shuffledOrder = _reshuffledAvoiding(_shuffledOrder, _playIndex);
+      }
+      _playIndex = _shuffledOrder[_shufflePos];
+    } else {
+      _playIndex = (_playIndex + 1) % _playUrls.length;
+    }
+  }
+
+  /// 현재 _playUrls 길이로 새 permutation 생성 + 첫 항목으로 _playIndex 정렬.
+  /// shuffle ON 진입 시점이나 _applyFilter로 길이가 바뀐 직후에 호출.
+  void _regenerateShuffleOrder() {
+    if (_playUrls.isEmpty) {
+      _shuffledOrder = const [];
+      _shufflePos = 0;
+      return;
+    }
+    final base = List<int>.generate(_playUrls.length, (i) => i);
+    // 현재 보이던 사진(_playIndex)이 셔플 첫 장으로 또 나오지 않게.
+    _shuffledOrder = _reshuffledAvoiding(base, _playIndex);
+    _shufflePos = 0;
+    _playIndex = _shuffledOrder[0];
+  }
+
+  /// [source]의 원소를 새 permutation으로 섞되 첫 항목이 [avoidFirst]가
+  /// 되지 않도록 보정 — 셔플 진입·사이클 경계에서 같은 사진이 연속으로
+  /// 나오는 걸 막는다. 첫 항목이 겹치면 마지막 항목과 swap(permutation 유지).
+  List<int> _reshuffledAvoiding(List<int> source, int avoidFirst) {
+    final next = List<int>.of(source)..shuffle();
+    if (next.length > 1 && next.first == avoidFirst) {
+      final last = next.length - 1;
+      next[0] = next[last];
+      next[last] = avoidFirst;
+    }
+    return next;
   }
 
   void _applyFilter() {
@@ -528,10 +756,16 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
     _filteredContents = [];
 
     for (int i = 0; i < _allPlayUrls.length; i++) {
-      final sceneId = widget.scenes[_allPlaySceneIndex[i]].id;
+      final sceneId = widget.scene.id;
       final mediaType = _allMediaTypes[i];
+      final contentId = _allContents[i].id;
+      // moment 필터 의미론: 빈 set = "전체 재생"(필터 미적용),
+      // non-empty = 그 안의 content_id만 통과.
+      final passesMomentFilter = _selectedMomentIds.isEmpty ||
+          _selectedMomentIds.contains(contentId);
       if (_selectedSceneIds.contains(sceneId) &&
-          _selectedMediaTypes.contains(mediaType)) {
+          _selectedMediaTypes.contains(mediaType) &&
+          passesMomentFilter) {
         _playUrls.add(_allPlayUrls[i]);
         _playSceneIndex.add(_allPlaySceneIndex[i]);
         _playDates.add(_allPlayDates[i]);
@@ -549,27 +783,68 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   /// 시트 안의 미리보기는 자체 타이머로 같은 필터·같은 항목들을 9:16 비율로
   /// 계속 cycle. 채널 탭 시 시트가 직접 frame 렌더 → MP4 합성 → 저장/공유까지
   /// 처리하고 toast 후 닫힘.
+  /// Content.payload의 width/height에서 사진 원본 가로/세로 비율 산출. 없거나
+  /// 잘못된 값이면 null — view가 fallback 적용.
+  double? _aspectOf(Content c) {
+    final w = c.payload['width'];
+    final h = c.payload['height'];
+    if (w is int && h is int && w > 0 && h > 0) return w / h;
+    return null;
+  }
+
   Future<void> _showShareSheet() async {
     if (_playUrls.isEmpty) return;
     final wasPaused = _paused;
-    setState(() => _paused = true);
+    setState(() {
+      _paused = true;
+      _sheetOpen = true;
+    });
 
     // 미리보기에 넘길 frame들 — 필터 적용 후 재생 대상에서 그대로 추출.
     // 영상 길이/렌더 시간 폭주 방지를 위해 최대 100장까지만 cap.
-    // renderUrl엔 thumbSignedUrl을 넣어 frame 렌더 단계의 storage egress 감소.
-    // 미리보기는 url(full)로 그대로라 시트 안 화질은 영향 X.
-    final maxFrames = math.min(_playUrls.length, 100);
+    //   - url(미리보기): tier별 다름.
+    //     · 무료: full(1920) — play 메인이 이미 캐시한 URL과 같아 ImageCache
+    //       hit, 추가 egress 0. 30장 cap이라 RGBA RAM 부담은 ImageCache LRU
+    //       (100MB)가 자연 회전으로 흡수.
+    //     · HD: thumb(600) — 100장 × 2560 RGBA가 ImageCache cap을 크게
+    //       초과해 evict ↔ re-decode thrashing 위험. 별도 thumb으로 받아
+    //       메모리 보호. 어차피 HD는 slideshow가 메인 출력.
+    //   - renderUrl(영상 캡처): full(free 1920 / HD 2560 long-edge WebP) —
+    //     슬라이드쇼 1080×1920에 1:1 매칭. 단, 슬라이드쇼는 HD 전용이라
+    //     무료 회원은 contact sheet만 렌더링됨 → contact sheet 렌더러는
+    //     frame.url(=full for 무료)을 사용.
+    final isHdViewer = ref.read(isSubscribedProvider);
+    // shuffle ON이면 _shuffledOrder의 순서대로 영상에 들어가도록. 길이
+    // 불일치 시(예외) sequential로 fallback. shuffle OFF면 그대로 인덱스 순서.
+    final useShuffled =
+        _shuffle && _shuffledOrder.length == _playUrls.length;
+    final order = useShuffled
+        ? _shuffledOrder
+        : List<int>.generate(_playUrls.length, (i) => i);
+    final maxFrames = math.min(order.length, 100);
     final frames = <ShareFrame>[
-      for (var i = 0; i < maxFrames; i++)
-        ShareFrame(
-          url: _playUrls[i],
-          renderUrl: _filteredContents[i].thumbSignedUrl,
-          sceneName: widget.scenes[_playSceneIndex[i]].title,
-          occurredAt: _playDates[i],
-          mediaType: _filteredMediaTypes[i],
-        ),
+      for (var k = 0; k < maxFrames; k++)
+        () {
+          final i = order[k];
+          return ShareFrame(
+            url: isHdViewer
+                ? (_filteredContents[i].thumbSignedUrl ?? _playUrls[i])
+                : (_filteredContents[i].fullSignedUrl ??
+                    _filteredContents[i].thumbSignedUrl ??
+                    _playUrls[i]),
+            renderUrl: _filteredContents[i].fullSignedUrl,
+            sceneName: widget.scene.title,
+            sceneNumber: widget.scene.number,
+            occurredAt: _playDates[i],
+            mediaType: _filteredMediaTypes[i],
+            aspect: _aspectOf(_filteredContents[i]),
+          );
+        }(),
     ];
-    final initialIndex = _playIndex % _playUrls.length;
+    // 현재 보고 있는 frame의 frames[] 내 위치. shuffle ON이면 _shufflePos가
+    // _shuffledOrder에서의 위치 = frames[] 내 위치와 동일. 아니면 _playIndex.
+    final initialIndex =
+        (useShuffled ? _shufflePos : _playIndex) % (maxFrames > 0 ? maxFrames : 1);
 
     await FloatingBottomSheet.show<void>(
       context: context,
@@ -577,10 +852,14 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
         frames: frames,
         initialIndex: initialIndex,
         photoFilter: _photoFilter,
+        sceneCoverUrl: widget.scene.coverImageUrl,
+        sceneNumber: widget.scene.number,
+        sceneTitle: widget.scene.title,
       ),
     );
 
     if (!mounted) return;
+    setState(() => _sheetOpen = false);
     if (!wasPaused && _playUrls.isNotEmpty) {
       setState(() => _paused = false);
       _scheduleNextContent();
@@ -589,19 +868,21 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
 
   void _showFilterSheet() {
     final wasPaused = _paused;
-    setState(() => _paused = true);
+    setState(() {
+      _paused = true;
+      _sheetOpen = true;
+    });
 
     FloatingBottomSheet.show(
       context: context,
       builder: (_) => _PlayFilterSheet(
-        scenes: widget.scenes,
-        selectedSceneIds: Set.of(_selectedSceneIds),
+        scene: widget.scene,
         selectedMediaTypes: Set.of(_selectedMediaTypes),
         selectedMomentIds: Set.of(_selectedMomentIds),
         photoFilter: _photoFilter,
-        onApply: (sceneIds, mediaTypes, momentIds, filter) {
+        shuffle: _shuffle,
+        onApply: (mediaTypes, momentIds, filter, shuffle) {
           setState(() {
-            _selectedSceneIds = sceneIds;
             _selectedMediaTypes
               ..clear()
               ..addAll(mediaTypes);
@@ -609,9 +890,22 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
               ..clear()
               ..addAll(momentIds);
             _photoFilter = filter;
+            _shuffle = shuffle;
             _applyFilter();
-            _playIndex = 0;
+            if (_shuffle && _playUrls.isNotEmpty) {
+              _regenerateShuffleOrder();
+            } else {
+              _shuffledOrder = const [];
+              _shufflePos = 0;
+              _playIndex = 0;
+            }
             _infoIndex = 0;
+            // 필터/셔플 적용으로 다음 재생 인덱스들이 바뀜 — 현재 + 향후
+            // 사진을 미리 디코드해 전환 시 사진이 늦게 뜨지 않게.
+            if (_playUrls.isNotEmpty) {
+              _kickOffPrecache(_playUrls[_playIndex % _playUrls.length]);
+              _ensureLookAheadPrecache();
+            }
             if (!wasPaused && _playUrls.isNotEmpty) {
               _paused = false;
               _scheduleNextContent();
@@ -619,24 +913,25 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
           });
           // 필터 결과가 0이면 재생할 콘텐츠가 없음 — 안내 후 화면 pop.
           if (_playUrls.isEmpty) {
-            AppToast.show(context, 'No moments to play.');
+            AppToast.show(
+        context,
+        AppLocalizations.of(context).playSceneNoMomentsToast,
+      );
             Navigator.of(context).pop();
           }
         },
       ),
     ).then((_) {
-      if (!wasPaused && _playUrls.isNotEmpty && mounted) {
+      if (!mounted) return;
+      setState(() => _sheetOpen = false);
+      if (!wasPaused && _playUrls.isNotEmpty) {
         setState(() => _paused = false);
         _scheduleNextContent();
       }
     });
   }
 
-  Scene get _currentScene {
-    if (_playSceneIndex.isEmpty) return widget.scenes.first;
-    final i = _infoIndex % _playSceneIndex.length;
-    return widget.scenes[_playSceneIndex[i]];
-  }
+  Scene get _currentScene => widget.scene;
 
   Widget _buildPlayInfo() {
     final scene = _currentScene;
@@ -689,20 +984,22 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
     );
   }
 
-  /// `_paused` 상태에 따라 accelerometer stream을 자동 토글. 매 setState
-  /// 호출자가 직접 켜고 끌 필요 없이 build 시작 시 한 번 동기화.
+  /// 재생 일시정지 + 시트가 떠있지 않을 때만 accelerometer stream 활성화.
+  /// 매 setState 호출자가 직접 켜고 끌 필요 없이 build 시작 시 한 번 동기화.
   void _syncTiltSubscription() {
-    if (_paused && _accelSub == null) {
+    final shouldListen = _paused && !_sheetOpen;
+    if (shouldListen && _accelSub == null) {
       _accelSub = accelerometerEventStream(
         samplingPeriod: const Duration(milliseconds: 33),
       ).listen((event) {
         // event.x: iOS portrait 기준 디바이스가 오른쪽으로 기울면 양수.
-        // ±2를 풀스윙(약 12°)으로 매핑 — 작은 손목 회전만으로도 풀 팬.
-        final target = (event.x / 2.0).clamp(-1.0, 1.0);
+        // ±2.5를 풀스윙(약 15°)으로 매핑 — 가벼운 손목 회전으로도 풀 팬에
+        // 도달하면서 정지 상태의 미세 흔들림은 비교적 적게 반응.
+        final target = (event.x / 2.5).clamp(-1.0, 1.0);
         // EMA 스무딩 — 손떨림 노이즈 억제. factor 0.12 → 약 250ms 응답.
         _tiltX.value = _tiltX.value + (target - _tiltX.value) * 0.12;
       });
-    } else if (!_paused && _accelSub != null) {
+    } else if (!shouldListen && _accelSub != null) {
       _accelSub!.cancel();
       _accelSub = null;
       _tiltX.value = 0.0;
@@ -841,20 +1138,29 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
                       _BlurPill(
                         onTap: () async {
                           final wasPaused = _paused;
-                          if (!wasPaused) setState(() => _paused = true);
+                          // _sheetOpen 토글 — confirm dialog 떠있는 동안엔
+                          // tilt parallax도 함께 정지(시트류와 같은 취급).
+                          setState(() {
+                            _paused = true;
+                            _sheetOpen = true;
+                          });
                           final confirmed = await ConfirmDialog.show(
                             context: context,
                             title: 'Stop playing?',
-                            confirmLabel: 'Stop',
+                            confirmLabel:
+                                AppLocalizations.of(context).playSceneStop,
                             isDestructive: true,
                           );
                           if (!mounted) return;
                           if (confirmed) {
                             _restoreSystemUI();
                             Navigator.of(this.context).pop();
-                          } else if (!wasPaused) {
-                            setState(() => _paused = false);
-                            _scheduleNextContent();
+                          } else {
+                            setState(() {
+                              _sheetOpen = false;
+                              if (!wasPaused) _paused = false;
+                            });
+                            if (!wasPaused) _scheduleNextContent();
                           }
                         },
                         isCircle: true,
@@ -876,7 +1182,10 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
                                   behavior: HitTestBehavior.opaque,
                                   onTap: _showFilterSheet,
                                   child: Padding(
-                                    padding: const EdgeInsets.only(left: 10),
+                                    // right 12로 텍스트와 우측 divider(=경계)
+                                    // 사이 breathing room 확보.
+                                    padding: const EdgeInsets.only(
+                                        left: 10, right: 12),
                                     child: _buildPlayInfo(),
                                   ),
                                 ),
@@ -964,7 +1273,7 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        'Preparing scenes...',
+                        AppLocalizations.of(context).playSceneLoadingPreparing,
                         style: AppTypography.body(14).copyWith(
                           color: Colors.white.withValues(alpha: 0.5),
                         ),
@@ -995,37 +1304,19 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
                               crossAxisAlignment:
                                   CrossAxisAlignment.center,
                               children: [
-                                for (int i = 0;
-                                    i < widget.scenes.length;
-                                    i++)
-                                  SizedBox(
-                                    height: 22,
-                                    child: AnimatedOpacity(
-                                      opacity:
-                                          _completedScenes.contains(i)
-                                              ? 0.0
-                                              : 1.0,
-                                      duration: const Duration(
-                                          milliseconds: 300),
-                                      child: i == _currentLoadingIndex
-                                          ? _ShimmerText(
-                                              text: widget
-                                                  .scenes[i].title,
-                                            )
-                                          : Text(
-                                              widget.scenes[i].title,
-                                              textAlign:
-                                                  TextAlign.center,
-                                              style:
-                                                  AppTypography.body(12)
-                                                      .copyWith(
-                                                color: Colors.white
-                                                    .withValues(
-                                                        alpha: 0.25),
-                                              ),
-                                            ),
+                                SizedBox(
+                                  height: 22,
+                                  child: AnimatedOpacity(
+                                    opacity: _completedScenes.contains(0)
+                                        ? 0.0
+                                        : 1.0,
+                                    duration: const Duration(
+                                        milliseconds: 300),
+                                    child: _ShimmerText(
+                                      text: widget.scene.title,
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
@@ -1055,6 +1346,7 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   void dispose() {
     _playing = false;
     _autoCycleTimer?.cancel();
+    _displayTimer?.cancel();
     _accelSub?.cancel();
     _tiltX.dispose();
     // ImageCache 한도 원복.
@@ -1381,24 +1673,24 @@ class _BinocularClipper extends CustomClipper<Path> {
 /// 좌→우로 반짝이는 shimmer 텍스트.
 class _PlayFilterSheet extends ConsumerStatefulWidget {
   const _PlayFilterSheet({
-    required this.scenes,
-    required this.selectedSceneIds,
+    required this.scene,
     required this.selectedMediaTypes,
     required this.selectedMomentIds,
     required this.photoFilter,
+    required this.shuffle,
     required this.onApply,
   });
 
-  final List<Scene> scenes;
-  final Set<String> selectedSceneIds;
+  final Scene scene;
   final Set<String> selectedMediaTypes;
   final Set<String> selectedMomentIds;
   final PhotoFilter photoFilter;
+  final bool shuffle;
   final void Function(
-    Set<String> sceneIds,
     Set<String> mediaTypes,
     Set<String> momentIds,
     PhotoFilter filter,
+    bool shuffle,
   ) onApply;
 
   @override
@@ -1406,53 +1698,48 @@ class _PlayFilterSheet extends ConsumerStatefulWidget {
 }
 
 class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
-  late final Set<String> _sceneIds;
   late final Set<String> _mediaTypes;
   late PhotoFilter _photoFilter;
+  late bool _shuffle;
 
   /// MomentSelectionScreen에서 선택한 콘텐츠 ID. Apply를 누르기 전까지는
   /// 시트 내부 pending 상태이고, Apply 시 부모로 commit된다.
   /// 비어 있으면 "전체" 의미.
   late final Set<String> _selectedMomentIds;
 
-  /// 선택된 moment 수가 있으면 그 수, 없으면 전체 콘텐츠 합계.
-  int _momentsCount(List<Scene> scenes) {
+  /// 선택된 moment 수가 있으면 그 수, 없으면 단일 scene의 콘텐츠 합계.
+  int _momentsCount(Scene scene) {
     if (_selectedMomentIds.isNotEmpty) return _selectedMomentIds.length;
-    return scenes.fold<int>(0, (sum, s) => sum + s.media.total);
+    return scene.media.total;
   }
 
-  static const _filterLabels = {
-    PhotoFilter.normal: 'Normal',
-    PhotoFilter.vintage: 'Vintage',
-    PhotoFilter.cinema: 'Cinema',
-    PhotoFilter.mono: 'Mono',
-  };
+  String _filterLabel(AppLocalizations l10n, PhotoFilter filter) {
+    switch (filter) {
+      case PhotoFilter.normal:
+        return l10n.playSceneFilterNormal;
+      case PhotoFilter.vintage:
+        return l10n.playSceneFilterVintage;
+      case PhotoFilter.cinema:
+        return l10n.playSceneFilterCinema;
+      case PhotoFilter.mono:
+        return l10n.playSceneFilterMono;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _sceneIds = Set.of(widget.selectedSceneIds);
     _mediaTypes = Set.of(widget.selectedMediaTypes);
     _selectedMomentIds = Set.of(widget.selectedMomentIds);
     _photoFilter = widget.photoFilter;
+    _shuffle = widget.shuffle;
   }
 
-  void _toggleScene(String id) {
-    setState(() {
-      if (_sceneIds.contains(id)) {
-        _sceneIds.remove(id);
-      } else {
-        _sceneIds.add(id);
-      }
-    });
-  }
-
-
-
-  bool get _canApply => _sceneIds.isNotEmpty && _mediaTypes.isNotEmpty;
+  bool get _canApply => _mediaTypes.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isSubscribed = ref.watch(isSubscribedProvider);
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1473,9 +1760,8 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
               final result = await Navigator.of(context).push<Set<String>>(
                 MomentSelectionScreen.route(
                   initiallySelected: _selectedMomentIds,
-                  // 앞에서 로딩된(=현재 sheet에서 선택된) scene의 콘텐츠만
-                  // 그리드에 노출.
-                  sceneIdFilter: _sceneIds,
+                  // 단일 scene 재생이므로 그 scene id로 필터.
+                  sceneIdFilter: {widget.scene.id},
                 ),
               );
               if (result != null) {
@@ -1506,7 +1792,7 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'Select Moments',
+                          l10n.playSceneSelectMoments,
                           style: AppTypography.body(15,
                                   weight: FontWeight.w600)
                               .copyWith(
@@ -1515,7 +1801,7 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${_momentsCount(widget.scenes)} moments',
+                          l10n.playSceneMomentsCount(_momentsCount(widget.scene)),
                           style: AppTypography.body(12).copyWith(
                             color: context.colors.foregroundMuted,
                           ),
@@ -1531,6 +1817,48 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        // Shuffle 토글 — on이면 _playUrls를 랜덤 순서로 재생.
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: context.colors.clickableArea,
+              borderRadius: AppRadii.sheetInnerBorder,
+              border: Border.all(
+                color: context.colors.foreground.withValues(alpha: 0.04),
+                width: 0.5,
+              ),
+            ),
+            child: Row(
+              children: [
+                FaIcon(
+                  FontAwesomeIcons.shuffle,
+                  size: 14,
+                  color: context.colors.foreground.withValues(alpha: 0.7),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    l10n.playSceneShuffle,
+                    style: AppTypography.body(
+                      15,
+                      weight: FontWeight.w600,
+                    ).copyWith(color: context.colors.foreground),
+                  ),
+                ),
+                Transform.translate(
+                  offset: const Offset(8, 0),
+                  child: Switch.adaptive(
+                    value: _shuffle,
+                    onChanged: (v) => setState(() => _shuffle = v),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -1566,7 +1894,7 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                         ),
                         child: Center(
                           child: Text(
-                            _filterLabels[filter]!,
+                            _filterLabel(l10n, filter),
                             style: AppTypography.body(12,
                                     weight: FontWeight.w500)
                                 .copyWith(
@@ -1627,7 +1955,7 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Apply film looks to your playback.',
+                            l10n.playSceneHdUpsellSubtitle,
                             style: AppTypography.body(12).copyWith(
                               color: context.colors.foregroundMuted,
                             ),
@@ -1655,10 +1983,10 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
               onTap: _canApply
                   ? () {
                       widget.onApply(
-                        _sceneIds,
                         _mediaTypes,
                         _selectedMomentIds,
                         _photoFilter,
+                        _shuffle,
                       );
                       Navigator.of(context).pop();
                     }
@@ -1674,7 +2002,7 @@ class _PlayFilterSheetState extends ConsumerState<_PlayFilterSheet> {
                   ),
                   child: Center(
                     child: Text(
-                      'Apply',
+                      l10n.actionApply,
                       style: AppTypography.body(15, weight: FontWeight.w600)
                           .copyWith(color: context.colors.background),
                     ),
@@ -1753,26 +2081,39 @@ class _ShimmerTextState extends State<_ShimmerText>
 
 enum _ShareChannel { save, story, more }
 
-enum _RenderState { idle, rendering, encoding, dispatching }
+/// 공유 영상 준비 단계 가중치. 0..1 progress 안에서 각 단계가 차지하는 구간.
+///   - render: 0.00 → 0.60 (PNG frame 생성, 보통 가장 오래 걸림)
+///   - encode: 0.60 → 0.95 (PNG 시퀀스 → MP4 인코딩)
+///   - dispatch: 0.95 → 1.00 (저장/공유 시트 호출, 거의 즉시)
+const double _renderProgressEnd = 0.60;
+const double _encodeProgressEnd = 0.95;
 
 /// 공유 바텀시트 본문. 9:16 미리보기는 자체 타이머로 cycle하고, 채널 탭 시
 /// 직접 frame 렌더 → AVAssetWriter 합성 → 채널별 dispatch까지 수행.
-class _ShareSheet extends StatefulWidget {
+class _ShareSheet extends ConsumerStatefulWidget {
   const _ShareSheet({
     required this.frames,
     required this.initialIndex,
     required this.photoFilter,
+    required this.sceneCoverUrl,
+    required this.sceneNumber,
+    required this.sceneTitle,
   });
 
   final List<ShareFrame> frames;
   final int initialIndex;
   final PhotoFilter photoFilter;
+  // 컨택트 시트 중앙 캐니스터에 표시되는 scene 정보. multi-scene play일 때는
+  // 첫 scene을 대표로.
+  final String sceneCoverUrl;
+  final int sceneNumber;
+  final String sceneTitle;
 
   @override
-  State<_ShareSheet> createState() => _ShareSheetState();
+  ConsumerState<_ShareSheet> createState() => _ShareSheetState();
 }
 
-class _ShareSheetState extends State<_ShareSheet> {
+class _ShareSheetState extends ConsumerState<_ShareSheet> {
   /// 메인 재생과 동일한 인터벌. 같은 페이스로 보여줘야 "공유될 영상" 감각 일치.
   static const _cyclePeriod = Duration(milliseconds: 750);
   static const _frameDuration = Duration(milliseconds: 750);
@@ -1780,11 +2121,34 @@ class _ShareSheetState extends State<_ShareSheet> {
   late int _index;
   Timer? _timer;
 
-  _RenderState _renderState = _RenderState.idle;
-  int _renderCurrent = 0;
-  int _renderTotal = 0;
+  // 미리보기 템플릿 carousel — 0: 컨택트 시트(무료 회원용/썸네일 기반),
+  // 1: 슬라이드쇼(풀사이즈 영상). 좌우 peek을 위해 viewportFraction이
+  // 시트 가용 폭에 따라 달라지므로 LayoutBuilder가 fraction을 알려주면
+  // 그때 controller 생성.
+  PageController? _previewController;
+  double? _previewFraction;
+  int _previewPage = 0;
 
-  bool get _busy => _renderState != _RenderState.idle;
+  PageController _controllerFor(double fraction) {
+    if (_previewController == null || _previewFraction != fraction) {
+      _previewController?.dispose();
+      _previewController = PageController(
+        initialPage: _previewPage,
+        viewportFraction: fraction,
+      );
+      _previewFraction = fraction;
+    }
+    return _previewController!;
+  }
+
+  // 영상 준비 통합 진행률. render → encode → dispatch 모두 합쳐 0..1.
+  bool _busy = false;
+  double _overallProgress = 0.0;
+
+  void _setProgress(double v) {
+    if (!mounted) return;
+    setState(() => _overallProgress = v.clamp(0.0, 1.0));
+  }
 
   @override
   void initState() {
@@ -1794,6 +2158,9 @@ class _ShareSheetState extends State<_ShareSheet> {
         : widget.initialIndex.clamp(0, widget.frames.length - 1);
     _timer = Timer.periodic(_cyclePeriod, (_) {
       if (!mounted || widget.frames.length <= 1) return;
+      // 슬라이드쇼 페이지(현재 순서에서 page 2)가 보일 때만 인덱스 진행 —
+      // 포커싱 안 된 템플릿은 백그라운드로 돌지 않게.
+      if (_previewPage != 2) return;
       setState(() {
         _index = (_index + 1) % widget.frames.length;
       });
@@ -1803,62 +2170,124 @@ class _ShareSheetState extends State<_ShareSheet> {
   @override
   void dispose() {
     _timer?.cancel();
+    _previewController?.dispose();
     super.dispose();
   }
 
   Future<void> _handleChannel(_ShareChannel channel) async {
     if (_busy || widget.frames.isEmpty) return;
+    // page 0(컨택트 시트)만 무료 사용 가능. page 1(스네이크), page 2(스택),
+    // page 3(슬라이드쇼)은 Scenes HD 전용. UI상으로도 미리보기 위에 HD 뱃지
+    // 가려져 있어 일반적으로는 도달하기 어렵지만 안전 게이트.
+    if (_previewPage > 0 && !ref.read(isSubscribedProvider)) {
+      Navigator.of(context).pop();
+      Navigator.of(context).push(SubscriptionScreen.route());
+      return;
+    }
     setState(() {
-      _renderState = _RenderState.rendering;
-      _renderCurrent = 0;
-      _renderTotal = widget.frames.length;
+      _busy = true;
+      _overallProgress = 0;
     });
+
+    // 단계별 onProgress 콜백을 통합 0..1 progress로 변환하는 헬퍼.
+    void renderTick(int current, int total) {
+      if (total <= 0) return;
+      _setProgress(_renderProgressEnd * (current / total));
+    }
+
+    void encodeTick(int current, int total) {
+      if (total <= 0) return;
+      final span = _encodeProgressEnd - _renderProgressEnd;
+      _setProgress(_renderProgressEnd + span * (current / total));
+    }
 
     Directory? tempDir;
     try {
       tempDir = await Directory.systemTemp.createTemp('scenes_share_');
       if (!mounted) return;
 
-      // Phase 1: Flutter가 각 frame을 1080×1920 PNG로 굽기.
-      final framePaths =
-          await ShareFrameRenderer.instance.renderFrames(
-        context: context,
-        frames: widget.frames,
-        colorFilter: _colorFilterFor(widget.photoFilter),
-        outputDir: tempDir,
-        onProgress: (current, total) {
-          if (!mounted) return;
-          setState(() {
-            _renderCurrent = current;
-            _renderTotal = total;
-          });
-        },
-      );
+      // 1) 페이지 종류에 따라 PNG frame들을 생성. 각 분기는 (framePaths, fps,
+      // outputName)을 결정 — 이후 인코딩/디스패치 단계는 공통.
+      final List<String> framePaths;
+      final int fps;
+      final String outputName;
+      // 애니메이션 템플릿은 24fps로 통일 — 12fps 이하는 재생이 끊겨 보임.
+      // 소스 PNG 캡처 양은 늘지만(약 2배) 결과 영상의 부드러움이 훨씬 좋아짐.
+      const animationFps = 24;
+      if (_previewPage == 0) {
+        framePaths =
+            await ShareFrameRenderer.instance.renderContactSheetAnimation(
+          context: context,
+          frames: widget.frames,
+          colorFilter: _colorFilterFor(widget.photoFilter),
+          outputDir: tempDir,
+          sceneCoverUrl: widget.sceneCoverUrl,
+          sceneNumber: widget.sceneNumber,
+          sceneTitle: widget.sceneTitle,
+          fps: animationFps,
+          onProgress: renderTick,
+        );
+        fps = animationFps;
+        outputName = 'scenes_contact_sheet.mp4';
+      } else if (_previewPage == 1) {
+        framePaths = await ShareFrameRenderer.instance.renderSnakeAnimation(
+          context: context,
+          frames: widget.frames,
+          colorFilter: _colorFilterFor(widget.photoFilter),
+          outputDir: tempDir,
+          sceneCoverUrl: widget.sceneCoverUrl,
+          sceneNumber: widget.sceneNumber,
+          sceneTitle: widget.sceneTitle,
+          fps: animationFps,
+          onProgress: renderTick,
+        );
+        fps = animationFps;
+        outputName = 'scenes_snake.mp4';
+      } else if (_previewPage == 2) {
+        framePaths = await ShareFrameRenderer.instance.renderStackAnimation(
+          context: context,
+          frames: widget.frames,
+          colorFilter: _colorFilterFor(widget.photoFilter),
+          outputDir: tempDir,
+          sceneCoverUrl: widget.sceneCoverUrl,
+          sceneNumber: widget.sceneNumber,
+          sceneTitle: widget.sceneTitle,
+          fps: animationFps,
+          onProgress: renderTick,
+        );
+        fps = animationFps;
+        outputName = 'scenes_stack.mp4';
+      } else {
+        framePaths = await ShareFrameRenderer.instance.renderFrames(
+          context: context,
+          frames: widget.frames,
+          colorFilter: _colorFilterFor(widget.photoFilter),
+          outputDir: tempDir,
+          onProgress: renderTick,
+        );
+        // 슬라이드쇼는 _frameDuration으로 timing 결정 — fps는 그 역수.
+        fps = (1000 / _frameDuration.inMilliseconds).round();
+        outputName = 'scenes_share.mp4';
+      }
       if (!mounted) return;
+      _setProgress(_renderProgressEnd);
 
-      // Phase 2: iOS AVAssetWriter가 PNG 시퀀스를 H.264 MP4로 인코딩.
-      setState(() {
-        _renderState = _RenderState.encoding;
-        _renderCurrent = 0;
-        _renderTotal = framePaths.length;
-      });
-      final outputPath = '${tempDir.path}/scenes_share.mp4';
+      // 2) PNG 시퀀스 → MP4 인코딩.
+      final outputPath = '${tempDir.path}/$outputName';
       final videoPath = await VideoComposer.instance.composeVideo(
         framePaths: framePaths,
-        frameDuration: _frameDuration,
+        // 슬라이드쇼(page 3)는 _frameDuration으로 timing 결정, 나머지(컨택트
+        // 시트/스네이크/스택)는 fps의 역수.
+        frameDuration: _previewPage == 3
+            ? _frameDuration
+            : Duration(milliseconds: (1000 / fps).round()),
         outputPath: outputPath,
-        onProgress: (current, total) {
-          if (!mounted) return;
-          setState(() {
-            _renderCurrent = current;
-            _renderTotal = total;
-          });
-        },
+        onProgress: encodeTick,
       );
       if (!mounted) return;
+      _setProgress(_encodeProgressEnd);
 
-      // Phase 3: 채널별 dispatch.
-      setState(() => _renderState = _RenderState.dispatching);
+      // 3) 채널별 dispatch.
       switch (channel) {
         case _ShareChannel.save:
           await _saveToGallery(videoPath);
@@ -1867,6 +2296,7 @@ class _ShareSheetState extends State<_ShareSheet> {
         case _ShareChannel.more:
           await _shareGeneral(videoPath);
       }
+      _setProgress(1.0);
       if (!mounted) return;
       Navigator.of(context).pop();
     } catch (e) {
@@ -1874,8 +2304,14 @@ class _ShareSheetState extends State<_ShareSheet> {
       if (!mounted) return;
       // 디버깅 중 — 토스트에 raw 에러 메시지를 노출. 안정화 후 generic 메시지로
       // 되돌릴 것.
-      AppToast.show(context, 'Share failed: $e');
-      setState(() => _renderState = _RenderState.idle);
+      AppToast.show(
+        context,
+        AppLocalizations.of(context).playSceneShareFailedToast,
+      );
+      setState(() {
+        _busy = false;
+        _overallProgress = 0;
+      });
     } finally {
       // 임시 frame PNG들과 MP4 모두 정리. PhotoManager.saveVideo는 라이브러리에
       // 복사본 생성, SharePlus도 OS가 복사본 보유, IG는 pasteboard에 데이터로
@@ -1895,14 +2331,24 @@ class _ShareSheetState extends State<_ShareSheet> {
       ),
     );
     if (!permission.isAuth) {
-      if (mounted) AppToast.show(context, 'Photo permission required.');
+      if (mounted) {
+        AppToast.show(
+          context,
+          AppLocalizations.of(context).playScenePhotoPermissionToast,
+        );
+      }
       return;
     }
     await PhotoManager.editor.saveVideo(
       File(videoPath),
       title: 'scenes_share_${DateTime.now().millisecondsSinceEpoch}.mp4',
     );
-    if (mounted) AppToast.show(context, 'Saved to Photos');
+    if (mounted) {
+      AppToast.show(
+        context,
+        AppLocalizations.of(context).playSceneSavedToPhotosToast,
+      );
+    }
   }
 
   Future<void> _shareToStory(String videoPath) async {
@@ -1911,7 +2357,12 @@ class _ShareSheetState extends State<_ShareSheet> {
     } on PlatformException catch (e) {
       // IG 미설치 등으로 직접 attach 안 되면 일반 공유 시트로 fallback.
       if (e.code == 'unavailable') {
-        if (mounted) AppToast.show(context, 'Instagram is not installed.');
+        if (mounted) {
+          AppToast.show(
+            context,
+            AppLocalizations.of(context).playSceneInstagramMissingToast,
+          );
+        }
         await _shareGeneral(videoPath);
       } else {
         rethrow;
@@ -1927,107 +2378,300 @@ class _ShareSheetState extends State<_ShareSheet> {
     );
   }
 
+
   @override
   Widget build(BuildContext context) {
     final colorFilter = _colorFilterFor(widget.photoFilter);
     final frame = widget.frames.isEmpty ? null : widget.frames[_index];
+    final isHd = ref.watch(isSubscribedProvider);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+      // carousel이 시트 가용 폭을 다 써서 좌우 peek을 확보하도록 horizontal
+      // padding은 각 children이 개별로 들고 있고, 시트 자체엔 bottom만.
+      padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            'Share',
-            style: AppTypography.display(20).copyWith(
-              color: context.colors.foreground,
-              fontWeight: FontWeight.w700,
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              'Share',
+              style: AppTypography.display(20).copyWith(
+                color: context.colors.foreground,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          ClipRRect(
-            borderRadius: AppRadii.smBorder,
-            child: SizedBox(
-              width: kShareFrameLogicalWidth,
-              height: kShareFrameLogicalHeight,
-              child: frame == null
-                  ? const ColoredBox(color: Color(0xFF1C1C1E))
-                  : ShareFrameView(
-                      frame: frame,
-                      image: NetworkImage(frame.url),
-                      colorFilter: colorFilter,
+          // 미리보기 carousel — page 0: 컨택트 시트(default, free),
+          // page 1: 스택(lens, HD), page 2: 슬라이드쇼(HD). viewportFraction을
+          // 시트 폭 기준으로 계산해 포커싱된 페이지는 정확히 logical width로,
+          // 좌우 인접 페이지는 가장자리에 peek.
+          SizedBox(
+            height: kShareFrameLogicalHeight,
+            child: widget.frames.isEmpty
+                ? Center(
+                    child: ClipRRect(
+                      borderRadius: AppRadii.smBorder,
+                      child: SizedBox(
+                        width: kShareFrameLogicalWidth,
+                        height: kShareFrameLogicalHeight,
+                        child: const ColoredBox(color: Color(0xFF1C1C1E)),
+                      ),
                     ),
-            ),
+                  )
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      // slot = logical width + gap. fraction = slot / available.
+                      // 시트가 좁아 fraction이 1 근접하면 peek이 거의 안 보임 —
+                      // 그건 사용자 화면이 정말 좁을 때 자연스러운 fallback.
+                      const slotWidth = kShareFrameLogicalWidth + 12;
+                      final fraction =
+                          (slotWidth / constraints.maxWidth).clamp(0.4, 0.98);
+                      final controller = _controllerFor(fraction);
+                      final slideshow = ShareFrameView(
+                        frame: frame!,
+                        image: NetworkImage(frame.url),
+                        colorFilter: colorFilter,
+                      );
+                      final snake = SnakeShareView(
+                        frames: widget.frames,
+                        colorFilter: colorFilter,
+                        sceneCoverUrl: widget.sceneCoverUrl,
+                        sceneNumber: widget.sceneNumber,
+                        sceneTitle: widget.sceneTitle,
+                        isPlaying: _previewPage == 1,
+                      );
+                      final stack = StackShareView(
+                        frames: widget.frames,
+                        colorFilter: colorFilter,
+                        sceneCoverUrl: widget.sceneCoverUrl,
+                        sceneNumber: widget.sceneNumber,
+                        sceneTitle: widget.sceneTitle,
+                        isPlaying: _previewPage == 2,
+                      );
+                      // page 0(컨택트 시트)만 무료. page 1(스네이크), page 2
+                      // (스택), page 3(슬라이드쇼)은 Scenes HD 전용. 무료
+                      // 회원에겐 HD 페이지 위에 dim + HD 뱃지 오버레이. 탭하면
+                      // 시트를 닫고 SubscriptionScreen으로.
+                      final pages = <Widget>[
+                        ContactSheetView(
+                          frames: widget.frames,
+                          colorFilter: colorFilter,
+                          isPlaying: _previewPage == 0,
+                          sceneCoverUrl: widget.sceneCoverUrl,
+                          sceneNumber: widget.sceneNumber,
+                          sceneTitle: widget.sceneTitle,
+                        ),
+                        isHd ? snake : _SlideshowHdLock(child: snake),
+                        isHd ? stack : _SlideshowHdLock(child: stack),
+                        isHd
+                            ? slideshow
+                            : _SlideshowHdLock(child: slideshow),
+                      ];
+                      return PageView.builder(
+                        controller: controller,
+                        itemCount: pages.length,
+                        onPageChanged: (i) =>
+                            setState(() => _previewPage = i),
+                        itemBuilder: (context, i) {
+                          return AnimatedBuilder(
+                            animation: controller,
+                            builder: (context, _) {
+                              // 포커싱된 페이지는 1.0, 인접 페이지는 0.86까지
+                              // 줄어드는 linear taper. controller.page는 layout
+                              // 이전엔 null이라 _previewPage로 fallback.
+                              double page = _previewPage.toDouble();
+                              if (controller.position.haveDimensions) {
+                                page = controller.page ?? page;
+                              }
+                              final t =
+                                  (i - page).abs().clamp(0.0, 1.0);
+                              final scale = 1.0 - 0.14 * t;
+                              return Center(
+                                child: Transform.scale(
+                                  scale: scale,
+                                  child: ClipRRect(
+                                    borderRadius: AppRadii.smBorder,
+                                    child: SizedBox(
+                                      width: kShareFrameLogicalWidth,
+                                      height: kShareFrameLogicalHeight,
+                                      child: pages[i],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
           ),
-          const SizedBox(height: 20),
-          if (_busy)
-            _ProgressFooter(
-              label: _progressLabel(),
-              current: _renderCurrent,
-              total: _renderTotal,
-            )
-          else
-            Row(
-              children: [
-                Expanded(
-                  child: _ChannelCell(
-                    icon: FontAwesomeIcons.download,
-                    label: 'Save',
-                    onTap: () => _handleChannel(_ShareChannel.save),
-                  ),
+          const SizedBox(height: 10),
+          // 페이지 인디케이터.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(4, (i) {
+              final active = i == _previewPage;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: active ? 16 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active
+                      ? context.colors.foreground
+                      : context.colors.foreground.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(3),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _ChannelCell(
-                    icon: FontAwesomeIcons.instagram,
-                    label: 'Story',
-                    onTap: () => _handleChannel(_ShareChannel.story),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _ChannelCell(
-                    icon: FontAwesomeIcons.ellipsis,
-                    label: 'More',
-                    onTap: () => _handleChannel(_ShareChannel.more),
-                  ),
-                ),
-              ],
-            ),
+              );
+            }),
+          ),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: _busy
+                ? _ProgressFooter(progress: _overallProgress)
+                : Builder(builder: (context) {
+                    final l10n = AppLocalizations.of(context);
+                    // page 1(스택), page 2(슬라이드쇼)는 HD 전용. 무료 회원
+                    // 에겐 채널 셀을 dim 처리 — 시각적으로 잠긴 상태를 알리고,
+                    // 탭하면 _handleChannel이 SubscriptionScreen으로 라우팅.
+                    final lockedHd = _previewPage > 0 &&
+                        !ref.watch(isSubscribedProvider);
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: _ChannelCell(
+                            icon: FontAwesomeIcons.download,
+                            label: l10n.actionSave,
+                            dimmed: lockedHd,
+                            onTap: () =>
+                                _handleChannel(_ShareChannel.save),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ChannelCell(
+                            icon: FontAwesomeIcons.instagram,
+                            label: l10n.playSceneShareStory,
+                            dimmed: lockedHd,
+                            onTap: () =>
+                                _handleChannel(_ShareChannel.story),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _ChannelCell(
+                            icon: FontAwesomeIcons.ellipsis,
+                            label: l10n.playSceneShareMore,
+                            dimmed: lockedHd,
+                            onTap: () =>
+                                _handleChannel(_ShareChannel.more),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+          ),
         ],
       ),
     );
   }
 
-  String _progressLabel() {
-    switch (_renderState) {
-      case _RenderState.rendering:
-        return 'Preparing video';
-      case _RenderState.encoding:
-        return 'Encoding';
-      case _RenderState.dispatching:
-        return 'Sharing';
-      case _RenderState.idle:
-        return '';
-    }
+}
+
+/// 슬라이드쇼 미리보기를 가리는 Scenes HD 락 레이어. 무료 회원이 share 시트
+/// 에서 슬라이드쇼 페이지로 넘기면 보이며, 탭하면 시트를 닫고 SubscriptionScreen
+/// 으로 보낸다. 슬라이드쇼는 풀 화질 egress가 크고 HD 전용 기능이라 게이트.
+class _SlideshowHdLock extends StatelessWidget {
+  const _SlideshowHdLock({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 슬라이드쇼 미리보기는 살짝 보이게 — 무엇이 잠겼는지 teaser 역할.
+        ColorFiltered(
+          colorFilter: ColorFilter.mode(
+            Colors.black.withValues(alpha: 0.35),
+            BlendMode.srcATop,
+          ),
+          child: child,
+        ),
+        // 추가 dim — 가운데 뱃지 가독성 확보.
+        const ColoredBox(color: Color(0x66000000)),
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              Navigator.of(context).pop();
+              Navigator.of(context).push(SubscriptionScreen.route());
+            },
+            child: Center(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 0.6,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Scenes HD',
+                          style: AppTypography.body(
+                            13,
+                            weight: FontWeight.w600,
+                          ).copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(width: 6),
+                        const FaIcon(
+                          FontAwesomeIcons.chevronRight,
+                          size: 10,
+                          color: Colors.white,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
 /// 진행률 footer. 라벨 + linear progress + "X / N" 카운터.
+/// 공유 영상 준비 진행률 footer. 렌더링·인코딩·디스패치 모든 단계를 합쳐
+/// 하나의 0..1 progress로 표시 — 단계 라벨/n-of-N 카운트 없이 % 만.
 class _ProgressFooter extends StatelessWidget {
-  const _ProgressFooter({
-    required this.label,
-    required this.current,
-    required this.total,
-  });
+  const _ProgressFooter({required this.progress});
 
-  final String label;
-  final int current;
-  final int total;
+  /// 전체 작업 대비 완료 비율(0..1).
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
-    final value = total > 0 ? (current / total).clamp(0.0, 1.0) : null;
+    final clamped = progress.clamp(0.0, 1.0);
+    final percent = (clamped * 100).round();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
       child: Column(
@@ -2036,11 +2680,11 @@ class _ProgressFooter extends StatelessWidget {
           ClipRRect(
             borderRadius: AppRadii.xsBorder,
             child: TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0, end: value ?? 0),
+              tween: Tween(begin: 0, end: clamped),
               duration: const Duration(milliseconds: 220),
               curve: Curves.linear,
               builder: (context, v, _) => LinearProgressIndicator(
-                value: value == null ? null : v,
+                value: v,
                 minHeight: 4,
                 backgroundColor:
                     context.colors.foreground.withValues(alpha: 0.1),
@@ -2052,7 +2696,7 @@ class _ProgressFooter extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            total > 0 ? '$label  ·  $current / $total' : '$label…',
+            '$percent%',
             style: AppTypography.body(13).copyWith(
               color: context.colors.foregroundMuted,
             ),
@@ -2068,44 +2712,53 @@ class _ChannelCell extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.onTap,
+    this.dimmed = false,
   });
 
   final FaIconData icon;
   final String label;
   final VoidCallback onTap;
+  // 무료 회원이 HD 전용 채널(슬라이드쇼 page에서의 share)을 인지하도록 표시.
+  // 탭은 그대로 허용하지만 GestureDetector handler가 SubscriptionScreen으로
+  // 라우팅한다.
+  final bool dimmed;
 
   @override
   Widget build(BuildContext context) {
+    final cell = Container(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      decoration: BoxDecoration(
+        color: context.colors.clickableArea,
+        borderRadius: AppRadii.sheetInnerBorder,
+        border: Border.all(
+          color: context.colors.foreground.withValues(alpha: 0.04),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FaIcon(
+            icon,
+            size: 22,
+            color: context.colors.foreground.withValues(alpha: 0.7),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: AppTypography.body(12).copyWith(
+              color: context.colors.foregroundMuted,
+            ),
+          ),
+        ],
+      ),
+    );
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: context.colors.clickableArea,
-          borderRadius: AppRadii.sheetInnerBorder,
-          border: Border.all(
-            color: context.colors.foreground.withValues(alpha: 0.04),
-            width: 0.5,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FaIcon(
-              icon,
-              size: 22,
-              color: context.colors.foreground.withValues(alpha: 0.7),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: AppTypography.body(12).copyWith(
-                color: context.colors.foregroundMuted,
-              ),
-            ),
-          ],
-        ),
+      child: Opacity(
+        opacity: dimmed ? 0.4 : 1.0,
+        child: cell,
       ),
     );
   }

@@ -165,10 +165,14 @@ class _PermissionBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final partnerName =
         ref.watch(activeCoupleProvider).valueOrNull?.partner.displayName ?? '';
-    final activitySubject =
-        partnerName.isEmpty ? 'partner' : "$partnerName's";
+    // 파트너 이름이 있으면 이름 박힌 문장, 없으면 "your partner" 같은 일반 문장.
+    // 영어의 's 소유격, 한국어의 ~님의 어미가 로케일별로 처리되도록 분기.
+    final bodyText = partnerName.isEmpty
+        ? l10n.notificationsBannerBodyNoName
+        : l10n.notificationsBannerBodyWithName(partnerName);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
       child: GestureDetector(
@@ -196,14 +200,13 @@ class _PermissionBanner extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Turn on notifications',
+                      l10n.notificationsBannerTitle,
                       style: AppTypography.body(15, weight: FontWeight.w600)
                           .copyWith(color: context.colors.foreground),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Enable in Settings to receive $activitySubject '
-                      'activity and updates.',
+                      bodyText,
                       style: AppTypography.body(12).copyWith(
                         color: context.colors.foregroundMuted,
                         height: 1.4,
@@ -231,6 +234,7 @@ class _PreferencesList extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final prefsAsync = ref.watch(notificationPreferencesProvider);
 
     return prefsAsync.when(
@@ -251,7 +255,7 @@ class _PreferencesList extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
         child: Center(
           child: Text(
-            'Could not load preferences.',
+            l10n.notificationsLoadError,
             style: AppTypography.body(13).copyWith(
               color: context.colors.foregroundMuted,
             ),
@@ -269,16 +273,14 @@ class _PreferencesList extends ConsumerWidget {
         return Column(
           children: [
             _NotificationTile(
-              label: 'Partner activity',
-              description:
-                  'When your partner adds scenes, moments, or likes yours.',
+              label: l10n.notificationsPartnerActivityLabel,
+              description: l10n.notificationsPartnerActivityDesc,
               value: partner,
               onChanged: notifier.setPartnerActivity,
             ),
             _NotificationTile(
-              label: 'App news',
-              description:
-                  'Updates about new features and announcements.',
+              label: l10n.notificationsAppNewsLabel,
+              description: l10n.notificationsAppNewsDesc,
               value: marketing,
               onChanged: notifier.setMarketing,
             ),

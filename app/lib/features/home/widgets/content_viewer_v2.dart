@@ -1,11 +1,13 @@
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 
+import '../../../core/data/location_label_cache.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
@@ -15,7 +17,10 @@ import '../../../core/widgets/floating_action_sheet.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../content/contents_view_model.dart';
 import '../../content/data/content_repository.dart';
-import '../../content/likes_view_model.dart';
+import '../../content/models/reaction.dart';
+import '../../content/reactions_view_model.dart';
+import '../../content/widgets/reaction_bar.dart';
+import '../../content/widgets/reaction_picker_sheet.dart';
 import '../../content/models/content.dart';
 import '../../content/widgets/moment_date_picker_sheet.dart';
 import '../../content/widgets/source_badge.dart';
@@ -61,14 +66,13 @@ class ContentViewerV2 extends ConsumerStatefulWidget {
         reverseTransitionDuration: const Duration(milliseconds: 300),
         pageBuilder: (context, animation, secondaryAnimation) =>
             ContentViewerV2(
-          contents: contents,
-          initialIndex: initialIndex,
-          sceneImageUrl: sceneImageUrl,
-          sceneName: sceneName,
-          uploadedAt: uploadedAt,
-        ),
-        transitionsBuilder:
-            (context, animation, secondaryAnimation, child) {
+              contents: contents,
+              initialIndex: initialIndex,
+              sceneImageUrl: sceneImageUrl,
+              sceneName: sceneName,
+              uploadedAt: uploadedAt,
+            ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
           final curved = CurvedAnimation(
             parent: animation,
             curve: Curves.easeOut,
@@ -95,12 +99,12 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
   // 즉시 다음/이전 콘텐츠를 표시할 수 있게.
   late List<Content> _contents;
   bool _showInfo = false;
-  // 시각 효과(translate/scale/opacity/radius)에 쓰이는 "초과분" 오프셋.
-  // 사용자가 _dragDeadband를 넘어 당겨야 0보다 커진다.
-  double _dragOffset = 0;
+  // 드래그 시각 상태: (시각 오프셋, 드래그 중 여부). ValueNotifier로 들고
+  // 있어 드래그 중엔 변환 래퍼만 rebuild되고 Scaffold 본문은 그대로 둔다.
+  // 시각 오프셋은 _dragDeadband를 넘어 당겨야 0보다 커진다.
+  final ValueNotifier<(double, bool)> _drag = ValueNotifier((0.0, false));
   // 누적 raw drag dy. 데드밴드 판정용 — 손가락 이동량 자체.
   double _dragRaw = 0;
-  bool _dragging = false;
   // 처음 이만큼은 시각적으로 반응하지 않음 — 의도되지 않은 미세 스크롤이
   // 화면을 흐리게 만드는 걸 방지.
   static const double _dragDeadband = 60;
@@ -112,6 +116,12 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
     _currentIndex = widget.initialIndex;
   }
 
+  @override
+  void dispose() {
+    _drag.dispose();
+    super.dispose();
+  }
+
   /// 현재 표시 중인 Content. payload에서 type별 메타를 derive할 때 시작점.
   Content get _current => _contents[_currentIndex];
 
@@ -121,22 +131,83 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
   /// 현재 콘텐츠의 sceneId 사용.
   String get _sceneId => _current.sceneId;
 
-  Future<void> _toggleLike() async {
+  /// 현재 콘텐츠에 본인의 리액션 추가/수정/제거 시트 호출.
+  Future<void> _openReactionPicker() async {
     HapticFeedback.selectionClick();
-    try {
-      await ref
-          .read(myLikesForSceneProvider(_sceneId).notifier)
-          .toggle(_current.id);
-    } catch (_) {
-      if (mounted) AppToast.show(context, 'Failed to update like.');
+    final myId = ref.read(myProfileProvider).valueOrNull?.id;
+    if (myId == null) return;
+    final reactions =
+        ref
+            .read(reactionsForSceneProvider(_sceneId))
+            .valueOrNull?[_current.id] ??
+        const <Reaction>[];
+    Reaction? mine;
+    for (final r in reactions) {
+      if (r.userId == myId) {
+        mine = r;
+        break;
+      }
     }
+    final contentId = _current.id;
+
+    await FloatingBottomSheet.show<void>(
+      context: context,
+      builder: (_) => ReactionPickerSheet(
+        initialEmoji: mine?.emoji,
+        initialComment: mine?.comment,
+        onSubmit: (emoji, comment) async {
+          try {
+            await ref
+                .read(reactionsForSceneProvider(_sceneId).notifier)
+                .setMyReaction(
+                  userId: myId,
+                  contentId: contentId,
+                  emoji: emoji,
+                  comment: comment,
+                );
+          } catch (_) {
+            if (mounted) {
+              AppToast.show(
+                context,
+                AppLocalizations.of(context).reactionSaveFailed,
+              );
+            }
+          }
+        },
+        onRemove: () async {
+          try {
+            await ref
+                .read(reactionsForSceneProvider(_sceneId).notifier)
+                .removeMyReaction(userId: myId, contentId: contentId);
+          } catch (_) {
+            if (mounted) {
+              AppToast.show(
+                context,
+                AppLocalizations.of(context).reactionRemoveFailed,
+              );
+            }
+          }
+        },
+      ),
+    );
   }
 
-  /// 본인이 올린 콘텐츠인지. 작성자만 ellipsis 메뉴 / 삭제 / moment date 수정
-  /// 탭이 활성화. 권한 자체는 RLS가 강제하므로 이 체크는 UX용.
-  bool get _canDelete {
-    final myId = ref.read(myProfileProvider).valueOrNull?.id;
-    return myId != null && myId == _current.createdBy;
+  /// active 페어 멤버는 누가 올렸든 ellipsis 메뉴 / 삭제 / moment date 수정
+  /// 가능. RLS도 동일하게 페어 단위 권한.
+  bool get _canDelete => true;
+
+  String _mediaTypeLabel(AppLocalizations l10n, String type) {
+    switch (type) {
+      case 'photo':
+        return l10n.mediaLabelPhoto;
+      case 'film':
+        return l10n.mediaLabelFilm;
+      case 'music':
+        return l10n.mediaLabelMusic;
+      case 'place':
+        return l10n.mediaLabelPlace;
+    }
+    return type;
   }
 
   /// 현재 콘텐츠의 작성자 표시 이름.
@@ -194,7 +265,10 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
                 .replaceContent(updated);
           } catch (_) {
             if (!mounted) return;
-            AppToast.show(context, 'Failed to update date.');
+            AppToast.show(
+              context,
+              AppLocalizations.of(context).contentDetailUpdateDateFailed,
+            );
           }
         },
       ),
@@ -202,34 +276,35 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
   }
 
   void _handleMoreActions() {
+    final l10n = AppLocalizations.of(context);
     FloatingActionSheet.show(
       context: context,
       items: [
         FloatingActionItem(
-          label: 'Delete',
+          label: l10n.actionDelete,
           isDestructive: true,
           onTap: () async {
             final removingIndex = _currentIndex;
-            final contentId = _current.id;
+            final content = _current;
             final sceneId = _sceneId;
             final confirmed = await ConfirmDialog.show(
               context: context,
               title: 'Delete this moment?',
-              message: 'It will be removed from this scene.',
-              confirmLabel: 'Delete',
+              message: l10n.contentDetailDeleteMessage,
+              confirmLabel: l10n.actionDelete,
               isDestructive: true,
             );
             if (!confirmed || !mounted) return;
             try {
               await ref
                   .read(contentRepositoryProvider)
-                  .deleteContent(contentId);
+                  .deleteContent(content);
               if (!mounted) return;
               // contents 리스트에서 즉시 제거 — scene detail 그리드 watch가
               // 이 변화를 받아 그리드 셀이 빠짐.
               ref
                   .read(contentsForSceneProvider(sceneId).notifier)
-                  .removeContent(contentId);
+                  .removeContent(content.id);
               // scene_summary 뷰의 media count badge가 stale로 안 남게
               // scenesProvider도 동기 refresh — 다른 화면(홈/리스트) 모두
               // 즉시 반영.
@@ -245,13 +320,15 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
               }
               setState(() {
                 _contents = newList;
-                _currentIndex =
-                    removingIndex > 0 ? removingIndex - 1 : 0;
+                _currentIndex = removingIndex > 0 ? removingIndex - 1 : 0;
                 _showInfo = false;
               });
-            } catch (e) {
+            } catch (_) {
               if (!mounted) return;
-              AppToast.show(context, 'Failed to delete.');
+              AppToast.show(
+                context,
+                AppLocalizations.of(context).contentDetailDeleteFailed,
+              );
             }
           },
         ),
@@ -312,344 +389,321 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
 
   void _onVerticalDragUpdate(DragUpdateDetails details) {
     if (details.delta.dy > 0 || _dragRaw > 0) {
-      setState(() {
-        _dragging = true;
-        _dragRaw = (_dragRaw + details.delta.dy)
-            .clamp(0.0, _dragDeadband + 400.0);
-        _dragOffset = (_dragRaw - _dragDeadband).clamp(0.0, 400.0);
-      });
+      _dragRaw = (_dragRaw + details.delta.dy).clamp(
+        0.0,
+        _dragDeadband + 400.0,
+      );
+      final offset = (_dragRaw - _dragDeadband).clamp(0.0, 400.0);
+      _drag.value = (offset, true);
     }
   }
 
   void _onVerticalDragEnd(DragEndDetails details) {
     // 빠른 flick은 데드밴드를 분명히 넘긴 경우에만 pop으로 인정 — 짧은
     // 우연의 plus-flick으로 화면이 닫히지 않도록.
-    final fastFlick = _dragOffset > 0 &&
+    final offset = _drag.value.$1;
+    final fastFlick = offset > 0 &&
         details.primaryVelocity != null &&
         details.primaryVelocity! > 800;
-    if (_dragOffset > 120 || fastFlick) {
+    if (offset > 120 || fastFlick) {
       Navigator.of(context).pop();
     } else {
-      setState(() {
-        _dragging = false;
-        _dragRaw = 0;
-        _dragOffset = 0;
-      });
+      _dragRaw = 0;
+      _drag.value = (0.0, false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
-    final progress = (_dragOffset / 300).clamp(0.0, 1.0);
-    final scale = 1.0 - progress * 0.1;
-    final radius = progress * AppRadii.lg;
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
 
+    // Scaffold 본문은 드래그와 무관 — _DragDismissTransform의 child로 한 번만
+    // 빌드되어 드래그 중엔 rebuild되지 않는다. translate/scale/opacity/radius
+    // 시각 효과만 _drag notifier에 반응해 갱신.
     return GestureDetector(
       onVerticalDragUpdate: _onVerticalDragUpdate,
       onVerticalDragEnd: _onVerticalDragEnd,
-      child: AnimatedContainer(
-        duration: _dragging ? Duration.zero : const Duration(milliseconds: 250),
-        curve: Curves.easeOut,
-        transformAlignment: Alignment.topCenter,
-        transform: Matrix4.identity()
-          // ignore: deprecated_member_use
-          ..translate(0.0, _dragOffset)
-          // ignore: deprecated_member_use
-          ..scale(scale),
-        child: Opacity(
-          opacity: (1.0 - progress).clamp(0.0, 1.0),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: Scaffold(
-      body: Column(
-        children: [
-          // ── 앱바 영역 ──────────────────────────────────────
-          SizedBox(height: padding.top + 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                // 좌: 캐니스터 사진 + 제목 + 매체. 홈/picker와 동일하게
-                // cover URL 없거나 로드 실패 시 타이틀 첫 글자 fallback.
-                ClipOval(
-                  child: SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: () {
-                      final url = widget.sceneImageUrl;
-                      final title = widget.sceneName ?? '';
-                      if (url == null || url.isEmpty) {
-                        return SceneTitleFallback(title: title);
-                      }
-                      return Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            SceneTitleFallback(title: title),
-                      );
-                    }(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: _DragDismissTransform(
+        drag: _drag,
+        child: Scaffold(
+          body: Column(
+            children: [
+              // ── 앱바 영역 ──────────────────────────────────────
+              SizedBox(height: padding.top + 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
                   children: [
-                    if (widget.sceneName != null)
-                      Text(
-                        widget.sceneName!,
-                        style: AppTypography.body(13, weight: FontWeight.w600)
-                            .copyWith(color: context.colors.foreground),
+                    // 좌: 캐니스터 사진 + 제목 + 매체. 홈/picker와 동일하게
+                    // cover URL 없거나 로드 실패 시 타이틀 첫 글자 fallback.
+                    ClipOval(
+                      child: SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: () {
+                          final url = widget.sceneImageUrl;
+                          final title = widget.sceneName ?? '';
+                          if (url == null || url.isEmpty) {
+                            return SceneTitleFallback(title: title);
+                          }
+                          return Image.network(
+                            url,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) =>
+                                SceneTitleFallback(title: title),
+                          );
+                        }(),
                       ),
-                    Text(
-                      _currentMediaType,
-                      style: AppTypography.body(11).copyWith(
-                        color: context.colors.foregroundMuted,
+                    ),
+                    const SizedBox(width: 10),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (widget.sceneName != null)
+                          Text(
+                            widget.sceneName!,
+                            style: AppTypography.body(
+                              13,
+                              weight: FontWeight.w600,
+                            ).copyWith(color: context.colors.foreground),
+                          ),
+                        Text(
+                          _mediaTypeLabel(l10n, _currentMediaType),
+                          style: AppTypography.body(
+                            11,
+                          ).copyWith(color: context.colors.foregroundMuted),
+                        ),
+                      ],
+                    ),
+                    const Spacer(),
+                    // 우: 인덱스 · X pill. 인덱스 영역은 비활성, X 아이콘 영역만
+                    // 누르면 닫힘. (실수 탭으로 viewer가 사라지는 경우 방지)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 6),
+                          decoration: BoxDecoration(
+                            color: context.colors.foreground.withValues(
+                              alpha: 0.06,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(left: 12),
+                                child: Text(
+                                  '${_currentIndex + 1}/${_contents.length}',
+                                  style: AppTypography.body(11).copyWith(
+                                    color: context.colors.foreground
+                                        .withValues(alpha: 0.9),
+                                  ),
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Container(
+                                  width: 3,
+                                  height: 3,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: context.colors.foreground
+                                        .withValues(alpha: 0.3),
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () => Navigator.of(context).pop(),
+                                child: Padding(
+                                  padding: const EdgeInsets.only(
+                                    left: 4,
+                                    right: 12,
+                                    top: 4,
+                                    bottom: 4,
+                                  ),
+                                  child: FaIcon(
+                                    FontAwesomeIcons.xmark,
+                                    size: 11,
+                                    color: context.colors.foreground
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ],
                 ),
-                const Spacer(),
-                // 우: 인덱스 · X pill. 인덱스 영역은 비활성, X 아이콘 영역만
-                // 누르면 닫힘. (실수 탭으로 viewer가 사라지는 경우 방지)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      decoration: BoxDecoration(
-                        color: context.colors.foreground
-                            .withValues(alpha: 0.06),
-                        borderRadius: BorderRadius.circular(20),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── 콘텐츠 박스 ────────────────────────────────────
+              // 콘텐츠/바깥 영역 모두 탭 좌/우 절반 기준으로 인덱스 이동.
+              // 가로 스와이프도 처리. 메타 정보 토글은 하단 썸네일 dial에서
+              // 현재 인덱스를 다시 탭했을 때만 동작.
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final halfWidth = constraints.maxWidth / 2;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapUp: (details) {
+                        if (details.localPosition.dx < halfWidth) {
+                          if (_currentIndex > 0) {
+                            setState(() {
+                              _currentIndex--;
+                              _showInfo = false;
+                            });
+                            HapticFeedback.selectionClick();
+                          }
+                        } else {
+                          if (_currentIndex < _contents.length - 1) {
+                            setState(() {
+                              _currentIndex++;
+                              _showInfo = false;
+                            });
+                            HapticFeedback.selectionClick();
+                          }
+                        }
+                      },
+                      onHorizontalDragEnd: (details) {
+                        final velocity = details.primaryVelocity ?? 0;
+                        if (velocity < -300 &&
+                            _currentIndex < _contents.length - 1) {
+                          setState(() {
+                            _currentIndex++;
+                            _showInfo = false;
+                          });
+                          HapticFeedback.selectionClick();
+                        } else if (velocity > 300 && _currentIndex > 0) {
+                          setState(() {
+                            _currentIndex--;
+                            _showInfo = false;
+                          });
+                          HapticFeedback.selectionClick();
+                        }
+                      },
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                          ),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxHeight: 500,
+                            ),
+                            child: _buildContent(context),
+                          ),
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    );
+                  },
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // ── 정보 + 좋아요 ──────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Padding(
-                            padding: const EdgeInsets.only(left: 12),
-                            child: Text(
-                              '${_currentIndex + 1}/${_contents.length}',
-                              style: AppTypography.body(11).copyWith(
-                                color: context.colors.foreground
-                                    .withValues(alpha: 0.9),
-                              ),
-                            ),
+                          Builder(
+                            builder: (ctx) {
+                              // 현재 콘텐츠 작성자 이름. created_by를 본인/파트너
+                              // 프로필로 매핑하고, 탈퇴된 파트너면 l10n 라벨로
+                              // 마스킹. partner profile은 active couple에서만 로드
+                              // 되므로 abandoned 케이스는 archive UI 도입 전엔 도달
+                              // 불가지만 future-proof 마스킹 적용.
+                              final name = _resolveUploaderName(ctx);
+                              if (name == null || name.isEmpty) {
+                                return const SizedBox.shrink();
+                              }
+                              return Text(
+                                name,
+                                style:
+                                    AppTypography.body(
+                                      14,
+                                      weight: FontWeight.w500,
+                                    ).copyWith(
+                                      color: context.colors.foreground,
+                                    ),
+                              );
+                            },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8),
-                            child: Container(
-                              width: 3,
-                              height: 3,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: context.colors.foreground
-                                    .withValues(alpha: 0.3),
-                              ),
-                            ),
-                          ),
+                          const SizedBox(height: 2),
+                          // occurredAt(촬영/방문 시점) 우선, 없으면 createdAt
+                          // (콘텐츠가 scene에 추가된 시점)으로 fallback. photo는
+                          // EXIF taken_at이 occurredAt에 들어가 있고, film/music/
+                          // place는 occurredAt이 null이라 자동으로 게시된 날짜.
+                          // 작성자 본인이면 탭으로 picker 열어서 수정 가능.
                           GestureDetector(
+                            onTap: _canDelete
+                                ? _showMomentDatePicker
+                                : null,
                             behavior: HitTestBehavior.opaque,
-                            onTap: () => Navigator.of(context).pop(),
-                            child: Padding(
-                              padding: const EdgeInsets.only(
-                                left: 4,
-                                right: 12,
-                                top: 4,
-                                bottom: 4,
+                            child: Text(
+                              DateFormat.yMMMMd(locale).format(
+                                _current.occurredAt ?? _current.createdAt,
                               ),
-                              child: FaIcon(
-                                FontAwesomeIcons.xmark,
-                                size: 11,
-                                color: context.colors.foreground
-                                    .withValues(alpha: 0.6),
+                              style: AppTypography.body(12).copyWith(
+                                color: context.colors.foregroundMuted,
                               ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // ── 콘텐츠 박스 ────────────────────────────────────
-          // outer: 콘텐츠 *바깥* 영역 탭 → 좌/우 절반 기준으로 인덱스 이동.
-          //        가로 스와이프도 outer가 처리.
-          // inner: 콘텐츠 자체를 탭하면 메타 정보 토글. opaque로 inner 영역
-          //        터치는 outer까지 안 흘러내려간다.
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final halfWidth = constraints.maxWidth / 2;
-                return GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapUp: (details) {
-                    if (details.localPosition.dx < halfWidth) {
-                      if (_currentIndex > 0) {
-                        setState(() {
-                          _currentIndex--;
-                          _showInfo = false;
-                        });
-                        HapticFeedback.selectionClick();
-                      }
-                    } else {
-                      if (_currentIndex < _contents.length - 1) {
-                        setState(() {
-                          _currentIndex++;
-                          _showInfo = false;
-                        });
-                        HapticFeedback.selectionClick();
-                      }
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    final velocity = details.primaryVelocity ?? 0;
-                    if (velocity < -300 &&
-                        _currentIndex < _contents.length - 1) {
-                      setState(() {
-                        _currentIndex++;
-                        _showInfo = false;
-                      });
-                      HapticFeedback.selectionClick();
-                    } else if (velocity > 300 && _currentIndex > 0) {
-                      setState(() {
-                        _currentIndex--;
-                        _showInfo = false;
-                      });
-                      HapticFeedback.selectionClick();
-                    }
-                  },
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 500),
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () =>
-                              setState(() => _showInfo = !_showInfo),
-                          child: _buildContent(context),
-                        ),
-                      ),
+                    ReactionBar(
+                      contentId: _current.id,
+                      sceneId: _sceneId,
+                      onTapMyReaction: _openReactionPicker,
                     ),
-                  ),
-                );
-              },
-            ),
-          ),
-
-          const SizedBox(height: 16),
-
-          // ── 정보 + 좋아요 ──────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Builder(builder: (ctx) {
-                        // 현재 콘텐츠 작성자 이름. created_by를 본인/파트너
-                        // 프로필로 매핑하고, 탈퇴된 파트너면 l10n 라벨로
-                        // 마스킹. partner profile은 active couple에서만 로드
-                        // 되므로 abandoned 케이스는 archive UI 도입 전엔 도달
-                        // 불가지만 future-proof 마스킹 적용.
-                        final name = _resolveUploaderName(ctx);
-                        if (name == null || name.isEmpty) {
-                          return const SizedBox.shrink();
-                        }
-                        return Text(
-                          name,
-                          style: AppTypography.body(14,
-                                  weight: FontWeight.w500)
-                              .copyWith(color: context.colors.foreground),
-                        );
-                      }),
-                      const SizedBox(height: 2),
-                      // occurredAt(촬영/방문 시점) 우선, 없으면 createdAt
-                      // (콘텐츠가 scene에 추가된 시점)으로 fallback. photo는
-                      // EXIF taken_at이 occurredAt에 들어가 있고, film/music/
-                      // place는 occurredAt이 null이라 자동으로 게시된 날짜.
-                      // 작성자 본인이면 탭으로 picker 열어서 수정 가능.
+                    if (_canDelete) ...[
+                      const SizedBox(width: 16),
                       GestureDetector(
-                        onTap: _canDelete ? _showMomentDatePicker : null,
-                        behavior: HitTestBehavior.opaque,
-                        child: Text(
-                          DateFormat.yMMMMd('en').format(
-                            _current.occurredAt ?? _current.createdAt,
-                          ),
-                          style: AppTypography.body(12).copyWith(
-                            color: context.colors.foregroundMuted,
+                        onTap: _handleMoreActions,
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Center(
+                            child: FaIcon(
+                              FontAwesomeIcons.ellipsis,
+                              size: 18,
+                              color: context.colors.foregroundMuted,
+                            ),
                           ),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                Builder(builder: (context) {
-                  // 현재 content가 좋아요 됐는지 — likes provider의 set 조회.
-                  // 로딩 중이면 valueOrNull이 null이라 unliked로 보임 (수
-                  // 백 ms 후 reconcile). optimistic toggle은 즉시 반영됨.
-                  final likedSet = ref
-                      .watch(myLikesForSceneProvider(_sceneId))
-                      .valueOrNull ?? const <String>{};
-                  final liked = likedSet.contains(_current.id);
-                  return GestureDetector(
-                    onTap: _toggleLike,
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Center(
-                        child: FaIcon(
-                          liked
-                              ? FontAwesomeIcons.solidHeart
-                              : FontAwesomeIcons.heart,
-                          size: 20,
-                          color: liked
-                              ? const Color(0xFFE06C75)
-                              : context.colors.foregroundMuted,
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-                if (_canDelete) ...[
-                  const SizedBox(width: 16),
-                  GestureDetector(
-                    onTap: _handleMoreActions,
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Center(
-                        child: FaIcon(
-                          FontAwesomeIcons.ellipsis,
-                          size: 18,
-                          color: context.colors.foregroundMuted,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+              ),
 
-          const SizedBox(height: 20),
+              const SizedBox(height: 20),
 
-          // ── 썸네일 dial ──────────────────────────────────────
-          SizedBox(
-            height: 64,
-            child: _ThumbnailDial(
-              contents: _contents,
-              currentIndex: _currentIndex,
-              onIndexChanged: (i) {
+              // ── 썸네일 dial ──────────────────────────────────────
+              SizedBox(
+                height: 64,
+                child: _ThumbnailDial(
+                  contents: _contents,
+                  currentIndex: _currentIndex,
+                  onIndexChanged: (i) {
                     setState(() {
                       if (i == _currentIndex) {
                         // 같은 인덱스 다시 탭 → 메타 정보 토글.
@@ -661,36 +715,80 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
                     });
                     HapticFeedback.selectionClick();
                   },
-            ),
-          ),
-
-          // 썸네일 dial 가운데(=선택된 thumb) 아래에 고정 dot. dial이 항상 선택
-          // 항목을 중앙으로 스냅하므로 dot은 움직일 필요 없이 정중앙에 고정.
-          // 단일 콘텐츠면 표기 의미가 없어 숨김.
-          if (_contents.length > 1) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: Container(
-                width: 4,
-                height: 4,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: context.colors.foregroundMuted,
                 ),
               ),
-            ),
-          ],
 
-          SizedBox(height: padding.bottom + 16),
-        ],
+              // 썸네일 dial 가운데(=선택된 thumb) 아래에 고정 dot. dial이 항상 선택
+              // 항목을 중앙으로 스냅하므로 dot은 움직일 필요 없이 정중앙에 고정.
+              // 단일 콘텐츠면 표기 의미가 없어 숨김.
+              if (_contents.length > 1) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: context.colors.foregroundMuted,
+                    ),
+                  ),
+                ),
+              ],
+
+              SizedBox(height: padding.bottom + 16),
+            ],
+          ),
+        ),
       ),
-    ),
-    ),
-    ),
-    ),
     );
   }
 }
+
+/// 아래로 당겨 닫기 제스처의 시각 효과(translate/scale/opacity/radius)를
+/// 적용하는 래퍼.
+///
+/// [drag] notifier만 듣고 [child](= viewer 본문)는 그대로 통과시키므로,
+/// 드래그 중엔 이 래퍼만 rebuild되고 본문 트리는 rebuild되지 않는다.
+class _DragDismissTransform extends StatelessWidget {
+  const _DragDismissTransform({required this.drag, required this.child});
+
+  /// (시각 오프셋, 드래그 중 여부).
+  final ValueListenable<(double, bool)> drag;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<(double, bool)>(
+      valueListenable: drag,
+      child: child,
+      builder: (context, value, child) {
+        final (offset, dragging) = value;
+        final progress = (offset / 300).clamp(0.0, 1.0);
+        final scale = 1.0 - progress * 0.1;
+        final radius = progress * AppRadii.lg;
+        return AnimatedContainer(
+          duration:
+              dragging ? Duration.zero : const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          transformAlignment: Alignment.topCenter,
+          transform: Matrix4.identity()
+            // ignore: deprecated_member_use
+            ..translate(0.0, offset)
+            // ignore: deprecated_member_use
+            ..scale(scale),
+          child: Opacity(
+            opacity: (1.0 - progress).clamp(0.0, 1.0),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(radius),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 
 // ── 콘텐츠 정보 오버레이 (dimmed 위 center) ──────────────────
 
@@ -701,22 +799,26 @@ class _ContentInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
     final p = content.payload;
-    final mutedStyle =
-        AppTypography.body(13).copyWith(color: context.colors.foregroundMuted);
+    final mutedStyle = AppTypography.body(
+      13,
+    ).copyWith(color: context.colors.foregroundMuted);
 
     Widget pill(String text) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            color: context.colors.foreground.withValues(alpha: 0.1),
-          ),
-          child: Text(
-            text,
-            style: AppTypography.body(11)
-                .copyWith(color: context.colors.foreground),
-          ),
-        );
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(4),
+        color: context.colors.foreground.withValues(alpha: 0.1),
+      ),
+      child: Text(
+        text,
+        style: AppTypography.body(
+          11,
+        ).copyWith(color: context.colors.foreground),
+      ),
+    );
 
     Widget line(String text) =>
         Text(text, textAlign: TextAlign.center, style: mutedStyle);
@@ -724,14 +826,17 @@ class _ContentInfo extends StatelessWidget {
     switch (content.type) {
       case 'film':
         final kind = (p['media_type'] as String?) ?? 'movie';
-        final kindLabel = kind == 'tv' ? 'TV Series' : 'Movie';
-        final genres = (p['genres'] as List?)?.whereType<String>().toList()
-            ?? const <String>[];
+        final kindLabel = kind == 'tv'
+            ? l10n.contentDetailFilmTvSeries
+            : l10n.contentDetailFilmMovie;
+        final genres =
+            (p['genres'] as List?)?.whereType<String>().toList() ??
+            const <String>[];
         final year = p['release_year'];
         final runtime = p['runtime'];
         final detailParts = <String>[
           if (year != null) year.toString(),
-          if (runtime is int) '$runtime min',
+          if (runtime is int) l10n.runtimeMinutesValueSpaced(runtime),
         ];
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -755,7 +860,9 @@ class _ContentInfo extends StatelessWidget {
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            pill(isTrack ? 'Track' : 'Album'),
+            pill(isTrack
+                ? l10n.contentDetailMusicTrack
+                : l10n.contentDetailMusicAlbum),
             if (isTrack && album != null && album.isNotEmpty) ...[
               const SizedBox(height: 8),
               line(album),
@@ -769,10 +876,10 @@ class _ContentInfo extends StatelessWidget {
       case 'place':
         final region = p['region'] as String?;
         final country = p['country'] as String?;
-        final regionLine = [region, country]
-            .whereType<String>()
-            .where((s) => s.isNotEmpty)
-            .join(', ');
+        final regionLine = [
+          region,
+          country,
+        ].whereType<String>().where((s) => s.isNotEmpty).join(', ');
         final lat = p['lat'];
         final lng = p['lng'];
         final address = p['address'] as String?;
@@ -783,8 +890,7 @@ class _ContentInfo extends StatelessWidget {
               pill(regionLine),
               const SizedBox(height: 8),
             ],
-            if (address != null && address.isNotEmpty)
-              line(address),
+            if (address != null && address.isNotEmpty) line(address),
             if (lat is num && lng is num) ...[
               const SizedBox(height: 8),
               line(
@@ -795,33 +901,100 @@ class _ContentInfo extends StatelessWidget {
           ],
         );
       default:
-        // photo — EXIF 기반 메타 (촬영 시간, 좌표, 크기). 없는 필드는 omit.
+        // photo — EXIF 기반 메타 (촬영 시간, 위치, 크기). 없는 필드는 omit.
         final width = (p['width'] as num?)?.toInt();
         final height = (p['height'] as num?)?.toInt();
         final takenAtRaw = p['taken_at'] as String?;
-        final taken = takenAtRaw != null
-            ? DateTime.tryParse(takenAtRaw)
-            : null;
+        final taken = takenAtRaw != null ? DateTime.tryParse(takenAtRaw) : null;
         final lat = p['lat'];
         final lng = p['lng'];
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (lat is num && lng is num) ...[
-              line(
-                '${lat.toDouble().toStringAsFixed(4)}°, '
-                '${lng.toDouble().toStringAsFixed(4)}°',
+              _PhotoLocationLine(
+                lat: lat.toDouble(),
+                lng: lng.toDouble(),
+                style: mutedStyle,
               ),
               const SizedBox(height: 8),
             ],
             if (taken != null) ...[
-              line(DateFormat.yMMMd('en').add_jm().format(taken)),
+              line(DateFormat.yMMMd(locale).add_jm().format(taken)),
               const SizedBox(height: 8),
             ],
             if (width != null && height != null) line('$width × $height'),
           ],
         );
     }
+  }
+}
+
+/// EXIF 좌표를 OS native reverse geocoder(iOS CLGeocoder / Android Geocoder)
+/// 로 사람이 읽는 주소로 변환해 표시. 캐시 hit이면 첫 frame부터 주소,
+/// miss이면 좌표 보였다가 async resolve 후 주소로 swap. 한 번 resolve된
+/// 라벨은 state에 들고 있어 parent rebuild 시에도 재해석 없이 표시.
+class _PhotoLocationLine extends ConsumerStatefulWidget {
+  const _PhotoLocationLine({
+    required this.lat,
+    required this.lng,
+    required this.style,
+  });
+
+  final double lat;
+  final double lng;
+  final TextStyle style;
+
+  @override
+  ConsumerState<_PhotoLocationLine> createState() => _PhotoLocationLineState();
+}
+
+class _PhotoLocationLineState extends ConsumerState<_PhotoLocationLine> {
+  String? _label;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveLabel();
+  }
+
+  @override
+  void didUpdateWidget(_PhotoLocationLine old) {
+    super.didUpdateWidget(old);
+    if (old.lat != widget.lat || old.lng != widget.lng) {
+      // 다른 사진의 좌표로 위젯 재사용된 케이스 — 라벨 다시 풀기.
+      _label = null;
+      _resolveLabel();
+    }
+  }
+
+  Future<void> _resolveLabel() async {
+    final cache = ref.read(locationLabelCacheProvider);
+    // 동기 hit이면 즉시 set — FutureBuilder 같은 한 frame 좌표 깜빡임 없음.
+    final hit = cache.peek(widget.lat, widget.lng);
+    if (hit != null) {
+      setState(() => _label = hit);
+      return;
+    }
+    // miss — async resolve. 결과 도착 사이 widget이 unmount되거나 lat/lng가
+    // 다른 좌표로 바뀌었으면 무시.
+    final lat = widget.lat;
+    final lng = widget.lng;
+    final result = await cache.labelFor(lat, lng);
+    if (!mounted) return;
+    if (widget.lat != lat || widget.lng != lng) return;
+    setState(() => _label = result);
+  }
+
+  String get _coordsFallback =>
+      '${widget.lat.toStringAsFixed(4)}°, ${widget.lng.toStringAsFixed(4)}°';
+
+  @override
+  Widget build(BuildContext context) {
+    final text = (_label != null && _label!.isNotEmpty)
+        ? _label!
+        : _coordsFallback;
+    return Text(text, textAlign: TextAlign.center, style: widget.style);
   }
 }
 
@@ -872,12 +1045,10 @@ class _FilmContentCard extends StatelessWidget {
                 ),
                 if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
-                      context, imageOverlay!),
-                  const Positioned(
-                    top: 10,
-                    right: 10,
-                    child: TmdbBadge(),
+                    context,
+                    imageOverlay!,
                   ),
+                  const Positioned(top: 10, right: 10, child: TmdbBadge()),
                 ],
               ],
             ),
@@ -888,16 +1059,19 @@ class _FilmContentCard extends StatelessWidget {
           Text(
             title!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(17, weight: FontWeight.w600)
-                .copyWith(color: context.colors.foreground),
+            style: AppTypography.body(
+              17,
+              weight: FontWeight.w600,
+            ).copyWith(color: context.colors.foreground),
           ),
         if (director != null && director!.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             director!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(13)
-                .copyWith(color: context.colors.foregroundMuted),
+            style: AppTypography.body(
+              13,
+            ).copyWith(color: context.colors.foregroundMuted),
           ),
         ],
       ],
@@ -952,12 +1126,10 @@ class _MusicContentCard extends StatelessWidget {
                 ),
                 if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
-                      context, imageOverlay!),
-                  const Positioned(
-                    top: 10,
-                    right: 10,
-                    child: SpotifyBadge(),
+                    context,
+                    imageOverlay!,
                   ),
+                  const Positioned(top: 10, right: 10, child: SpotifyBadge()),
                 ],
               ],
             ),
@@ -968,16 +1140,19 @@ class _MusicContentCard extends StatelessWidget {
           Text(
             title!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(17, weight: FontWeight.w600)
-                .copyWith(color: context.colors.foreground),
+            style: AppTypography.body(
+              17,
+              weight: FontWeight.w600,
+            ).copyWith(color: context.colors.foreground),
           ),
         if (artist != null && artist!.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             artist!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(13)
-                .copyWith(color: context.colors.foregroundMuted),
+            style: AppTypography.body(
+              13,
+            ).copyWith(color: context.colors.foregroundMuted),
           ),
         ],
       ],
@@ -1032,12 +1207,10 @@ class _PlaceContentCard extends StatelessWidget {
                 ),
                 if (imageOverlay != null) ...[
                   _ContentViewerV2State._imageInfoOverlay(
-                      context, imageOverlay!),
-                  const Positioned(
-                    top: 10,
-                    right: 10,
-                    child: MapboxBadge(),
+                    context,
+                    imageOverlay!,
                   ),
+                  const Positioned(top: 10, right: 10, child: MapboxBadge()),
                 ],
               ],
             ),
@@ -1048,16 +1221,19 @@ class _PlaceContentCard extends StatelessWidget {
           Text(
             name!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(17, weight: FontWeight.w600)
-                .copyWith(color: context.colors.foreground),
+            style: AppTypography.body(
+              17,
+              weight: FontWeight.w600,
+            ).copyWith(color: context.colors.foreground),
           ),
         if (address != null && address!.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
             address!,
             textAlign: TextAlign.center,
-            style: AppTypography.body(13)
-                .copyWith(color: context.colors.foregroundMuted),
+            style: AppTypography.body(
+              13,
+            ).copyWith(color: context.colors.foregroundMuted),
           ),
         ],
       ],
@@ -1068,11 +1244,7 @@ class _PlaceContentCard extends StatelessWidget {
 // ── 콘텐츠 이미지 (비율 유지 + radius) ────────────────────────
 
 class _ContentImage extends StatefulWidget {
-  const _ContentImage({
-    required this.url,
-    required this.index,
-    this.overlay,
-  });
+  const _ContentImage({required this.url, required this.index, this.overlay});
 
   final String url;
   final int index;
@@ -1107,19 +1279,21 @@ class _ContentImageState extends State<_ContentImage> {
   void _resolve() {
     final provider = NetworkImage(widget.url);
     final stream = provider.resolve(ImageConfiguration.empty);
-    stream.addListener(ImageStreamListener(
-      (info, _) {
-        if (mounted) {
-          setState(() {
-            _aspectRatio =
-                info.image.width.toDouble() / info.image.height.toDouble();
-          });
-        }
-      },
-      onError: (_, __) {
-        if (mounted) setState(() => _failed = true);
-      },
-    ));
+    stream.addListener(
+      ImageStreamListener(
+        (info, _) {
+          if (mounted) {
+            setState(() {
+              _aspectRatio =
+                  info.image.width.toDouble() / info.image.height.toDouble();
+            });
+          }
+        },
+        onError: (_, __) {
+          if (mounted) setState(() => _failed = true);
+        },
+      ),
+    );
   }
 
   @override
@@ -1128,9 +1302,9 @@ class _ContentImageState extends State<_ContentImage> {
       return Center(
         child: Text(
           'Content #${widget.index + 1}',
-          style: AppTypography.display(24).copyWith(
-            color: context.colors.foregroundMuted,
-          ),
+          style: AppTypography.display(
+            24,
+          ).copyWith(color: context.colors.foregroundMuted),
         ),
       );
     }
@@ -1156,8 +1330,7 @@ class _ContentImageState extends State<_ContentImage> {
               height: double.infinity,
             ),
             if (widget.overlay != null)
-              _ContentViewerV2State._imageInfoOverlay(
-                  context, widget.overlay!),
+              _ContentViewerV2State._imageInfoOverlay(context, widget.overlay!),
           ],
         ),
       ),
@@ -1205,7 +1378,15 @@ class _ThumbBox extends StatelessWidget {
     return Image.network(
       u,
       fit: BoxFit.cover,
+      gaplessPlayback: true,
       errorBuilder: (_, _, _) => fallback,
+      // 디코드되기 전에도 슬롯 크기와 동일한 단색 컨테이너가 깔리도록.
+      // 사용자가 dial을 처음 펼치거나 캐시 미스 시 아무것도 안 보이는 빈
+      // 공간이 한 프레임 떴다가 이미지로 바뀌는 깜빡임을 방지.
+      frameBuilder: (context, child, frame, wasSync) {
+        if (wasSync || frame != null) return child;
+        return ColoredBox(color: context.colors.nonClickableArea);
+      },
     );
   }
 }
@@ -1224,8 +1405,7 @@ class _ThumbnailDial extends StatefulWidget {
   /// 썸네일에 사용할 작은 이미지 URL — 어떤 type이든 thumbSignedUrl 슬롯에
   /// 들어있도록 ContentRepository에서 hydrate해둠. 빈 문자열이면 fallback
   /// (locationDot/film/music 아이콘 박스).
-  String? _thumbUrl(int index) =>
-      contents[index].thumbSignedUrl;
+  String? _thumbUrl(int index) => contents[index].thumbSignedUrl;
 
   String _typeAt(int index) => contents[index].type;
 
@@ -1269,9 +1449,10 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
         !_userScrolling) {
       return;
     }
-    final index = (_scrollController.offset / _itemExtent)
-        .round()
-        .clamp(0, widget.contents.length - 1);
+    final index = (_scrollController.offset / _itemExtent).round().clamp(
+      0,
+      widget.contents.length - 1,
+    );
     if (index != _lastReportedIndex) {
       _lastReportedIndex = index;
       widget.onIndexChanged(index);
@@ -1329,61 +1510,60 @@ class _ThumbnailDialState extends State<_ThumbnailDial> {
               return false;
             },
             child: ListView.builder(
-            controller: _scrollController,
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: EdgeInsets.symmetric(horizontal: sidePadding),
-            itemCount: widget.contents.length,
-            itemBuilder: (context, index) {
-              return Padding(
-                padding: EdgeInsets.only(
-                  right: index < widget.contents.length - 1 ? _spacing : 0,
-                ),
-                child: GestureDetector(
-                  onTap: () => widget.onIndexChanged(index),
-                  child: AnimatedBuilder(
-                    animation: _scrollController,
-                    builder: (context, child) {
-                      double scale = 1.0;
-                      double rotateY = 0.0;
-                      if (_scrollController.hasClients &&
-                          _scrollController.position.haveDimensions) {
-                        final itemCenter =
-                            index * _itemExtent + _itemSize / 2;
-                        final viewCenter =
-                            _scrollController.offset + halfWidth;
-                        final distance =
-                            (itemCenter - viewCenter) / halfWidth;
-                        scale = (1.0 - distance.abs() * 0.15)
-                            .clamp(0.7, 1.0);
-                        rotateY = distance * 0.4;
-                      }
-                      return Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()
-                          ..setEntry(3, 2, 0.002)
-                          ..rotateY(rotateY)
-                          // ignore: deprecated_member_use
-                          ..scale(scale),
-                        child: child,
-                      );
-                    },
-                    child: ClipRRect(
-                      borderRadius: AppRadii.xsBorder,
-                      child: SizedBox(
-                        width: _itemSize,
-                        height: _itemSize,
-                        child: _ThumbBox(
-                          url: widget._thumbUrl(index),
-                          type: widget._typeAt(index),
+              controller: _scrollController,
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: sidePadding),
+              itemCount: widget.contents.length,
+              itemBuilder: (context, index) {
+                return Padding(
+                  padding: EdgeInsets.only(
+                    right: index < widget.contents.length - 1 ? _spacing : 0,
+                  ),
+                  child: GestureDetector(
+                    onTap: () => widget.onIndexChanged(index),
+                    child: AnimatedBuilder(
+                      animation: _scrollController,
+                      builder: (context, child) {
+                        double scale = 1.0;
+                        double rotateY = 0.0;
+                        if (_scrollController.hasClients &&
+                            _scrollController.position.haveDimensions) {
+                          final itemCenter =
+                              index * _itemExtent + _itemSize / 2;
+                          final viewCenter =
+                              _scrollController.offset + halfWidth;
+                          final distance =
+                              (itemCenter - viewCenter) / halfWidth;
+                          scale = (1.0 - distance.abs() * 0.15).clamp(0.7, 1.0);
+                          rotateY = distance * 0.4;
+                        }
+                        return Transform(
+                          alignment: Alignment.center,
+                          transform: Matrix4.identity()
+                            ..setEntry(3, 2, 0.002)
+                            ..rotateY(rotateY)
+                            // ignore: deprecated_member_use
+                            ..scale(scale),
+                          child: child,
+                        );
+                      },
+                      child: ClipRRect(
+                        borderRadius: AppRadii.xsBorder,
+                        child: SizedBox(
+                          width: _itemSize,
+                          height: _itemSize,
+                          child: _ThumbBox(
+                            url: widget._thumbUrl(index),
+                            type: widget._typeAt(index),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              );
-            },
-          ),
+                );
+              },
+            ),
           ),
         );
       },

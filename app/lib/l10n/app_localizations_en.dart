@@ -31,7 +31,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get transportAdd => 'Add scene';
 
   @override
-  String get transportPlay => 'Play scenes';
+  String get transportRecap => 'Rewind';
 
   @override
   String get addSceneCardLabel => 'add new scene';
@@ -67,7 +67,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sceneDetailEdit => 'Edit';
 
   @override
-  String get sceneDetailDelete => 'Delete';
+  String get actionDelete => 'Delete';
+
+  @override
+  String get actionRemove => 'Remove';
+
+  @override
+  String get reactionPickerUpdate => 'Update';
+
+  @override
+  String get reactionPickerCommentHint => 'Leave a comment (optional)';
+
+  @override
+  String get reactionPickerHdUpsellSubtitle =>
+      'Add a comment to your reaction.';
 
   @override
   String get sceneDetailShare => 'Share scene';
@@ -97,6 +110,33 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsPushNotifications => 'Notifications';
 
   @override
+  String get settingsLanguage => 'Language';
+
+  @override
+  String get languageScreenTitle => 'Language';
+
+  @override
+  String get languageEnglish => 'English';
+
+  @override
+  String get languageKorean => '한국어';
+
+  @override
+  String get languageSystem => 'Use device language';
+
+  @override
+  String get themeScreenTitle => 'Theme';
+
+  @override
+  String get themeDark => 'Dark';
+
+  @override
+  String get themeLight => 'Light';
+
+  @override
+  String get themeSystem => 'Use device theme';
+
+  @override
   String get settingsPrivacyPolicy => 'Privacy policy';
 
   @override
@@ -106,7 +146,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsInstagram => 'Scenes on Instagram';
 
   @override
-  String get settingsLogout => 'Log out';
+  String get settingsLogout => 'Sign Out';
 
   @override
   String get settingsDisconnect => 'Disconnect';
@@ -119,9 +159,6 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dangerZoneTitle => 'Danger zone';
-
-  @override
-  String get dangerZoneSubtitle => 'Actions in this area can\'t be undone.';
 
   @override
   String uploadChipPhotosProgress(int current, int total) {
@@ -165,6 +202,383 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get profileDeletedUserName => 'Deleted user';
+
+  @override
+  String get actionSave => 'Save';
+
+  @override
+  String get imageCropperTitle => 'Crop';
+
+  @override
+  String get editProfileNameHint => 'Name';
+
+  @override
+  String get editProfileSaveFailed => 'Save failed.';
+
+  @override
+  String get createSceneTitleHint => 'Scene title';
+
+  @override
+  String get createSceneCreate => 'Create';
+
+  @override
+  String get createSceneSaveFailed => 'Failed to save scene.';
+
+  @override
+  String get datePickerConfirm => 'Confirm';
+
+  @override
+  String get mediaLabelPhoto => 'Photo';
+
+  @override
+  String get mediaLabelFilm => 'Film';
+
+  @override
+  String get mediaLabelMusic => 'Music';
+
+  @override
+  String get mediaLabelPlace => 'Place';
+
+  @override
+  String get recapEmptyPhotos => 'No photos to rewind yet.';
+
+  @override
+  String get recapEmptyFilms => 'No films to rewind yet.';
+
+  @override
+  String get recapEmptyMusic => 'No songs to rewind yet.';
+
+  @override
+  String get recapEmptyPlaces => 'No places to rewind yet.';
+
+  @override
+  String get recapFilteredEmptyPhotos => 'No photos in selected scenes.';
+
+  @override
+  String get recapFilteredEmptyFilms => 'No films in selected scenes.';
+
+  @override
+  String get recapFilteredEmptyMusic => 'No songs in selected scenes.';
+
+  @override
+  String get recapFilteredEmptyPlaces => 'No places in selected scenes.';
+
+  @override
+  String get reactionSaveFailed => 'Failed to save reaction.';
+
+  @override
+  String get reactionRemoveFailed => 'Failed to remove reaction.';
+
+  @override
+  String get recapNavPrevious => 'Previous';
+
+  @override
+  String get recapNavNext => 'Next';
+
+  @override
+  String get recapNavPreviousPlace => 'Previous place';
+
+  @override
+  String get recapNavNextPlace => 'Next place';
+
+  @override
+  String get recapTicketReleased => 'Released';
+
+  @override
+  String get recapTicketRuntime => 'Runtime';
+
+  @override
+  String get recapTicketWatched => 'Watched';
+
+  @override
+  String runtimeMinutesValue(int minutes) {
+    return '${minutes}min';
+  }
+
+  @override
+  String runtimeMinutesValueSpaced(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get contentDetailFilmMovie => 'Movie';
+
+  @override
+  String get contentDetailFilmTvSeries => 'TV Series';
+
+  @override
+  String get contentDetailMusicTrack => 'Track';
+
+  @override
+  String get contentDetailMusicAlbum => 'Album';
+
+  @override
+  String get contentDetailUpdateDateFailed => 'Failed to update date.';
+
+  @override
+  String get contentDetailDeleteMessage =>
+      'It will be removed from this scene.';
+
+  @override
+  String get contentDetailDeleteFailed => 'Failed to delete.';
+
+  @override
+  String get actionApply => 'Apply';
+
+  @override
+  String get uploadCancelDialogMessage => 'Photos already uploaded will stay.';
+
+  @override
+  String get uploadCancelKeepUploading => 'Keep uploading';
+
+  @override
+  String get filterScenesAll => 'All scenes';
+
+  @override
+  String get playSceneAction => 'Play';
+
+  @override
+  String get playSceneStop => 'Stop';
+
+  @override
+  String get playSceneNoMomentsToast => 'No moments to play.';
+
+  @override
+  String get playSceneLoadingPreparing => 'Preparing the scene…';
+
+  @override
+  String get playSceneFilterNormal => 'Normal';
+
+  @override
+  String get playSceneFilterVintage => 'Vintage';
+
+  @override
+  String get playSceneFilterCinema => 'Cinema';
+
+  @override
+  String get playSceneFilterMono => 'Mono';
+
+  @override
+  String get playSceneSelectMoments => 'Select Moments';
+
+  @override
+  String playSceneMomentsCount(int count) {
+    return '$count moments';
+  }
+
+  @override
+  String get playSceneShuffle => 'Shuffle';
+
+  @override
+  String get playSceneHdUpsellSubtitle => 'Apply film looks to your playback.';
+
+  @override
+  String get playSceneShareFailedToast => 'Share failed.';
+
+  @override
+  String get playScenePhotoPermissionToast => 'Photo permission required.';
+
+  @override
+  String get playSceneSavedToPhotosToast => 'Saved to Photos';
+
+  @override
+  String get playSceneInstagramMissingToast => 'Instagram is not installed.';
+
+  @override
+  String get playSceneShareStory => 'Story';
+
+  @override
+  String get playSceneShareMore => 'More';
+
+  @override
+  String get photoPickerScreenTitle => 'Add Photos';
+
+  @override
+  String get photoPickerEmpty => 'No photos found';
+
+  @override
+  String get photoPickerAllPhotos => 'All Photos';
+
+  @override
+  String photoPickerBatchCapToast(int limit) {
+    return 'Up to $limit photos per upload.';
+  }
+
+  @override
+  String get photoPickerSceneCapToast => 'Scene\'s upload limit reached.';
+
+  @override
+  String get pickerSearchFailed => 'Search failed. Please try again.';
+
+  @override
+  String get pickerNoResults => 'No results found.';
+
+  @override
+  String get filmPickerScreenTitle => 'Add Film';
+
+  @override
+  String get filmPickerSearchHint => 'Search films…';
+
+  @override
+  String get filmPickerEmpty => 'Search for a film to add.';
+
+  @override
+  String get filmPickerTmdbAttribution => 'Movie data provided by TMDB';
+
+  @override
+  String get musicPickerScreenTitle => 'Add Music';
+
+  @override
+  String get musicPickerSearchHint => 'Search music…';
+
+  @override
+  String get musicPickerEmpty => 'Search for music to add.';
+
+  @override
+  String get musicPickerSpotifyAttribution => 'Music data provided by Spotify';
+
+  @override
+  String get placePickerScreenTitle => 'Add Place';
+
+  @override
+  String get placePickerSearchHint => 'Search places…';
+
+  @override
+  String get placePickerEmpty => 'Search for a place to add.';
+
+  @override
+  String get placePickerAppleAttribution => 'Search by Apple Maps';
+
+  @override
+  String get onboardingGetStarted => 'Get Started';
+
+  @override
+  String get onboardingContinueWithApple => 'Continue with Apple';
+
+  @override
+  String get onboardingContinueWithGoogle => 'Continue with Google';
+
+  @override
+  String get onboardingContinueWithKakao => 'Continue with Kakao';
+
+  @override
+  String get onboardingAgreementContinue => 'Continue';
+
+  @override
+  String get authErrorNetwork => 'Check your connection and try again.';
+
+  @override
+  String get authErrorGeneric => 'Sign in failed. Please try again.';
+
+  @override
+  String get actionContinue => 'Continue';
+
+  @override
+  String get sceneDetailDeleteMessage =>
+      'All moments in this scene will also be removed.';
+
+  @override
+  String get sceneDetailDeleteFailedToast => 'Failed to delete scene.';
+
+  @override
+  String get sceneDetailReorderSaveFailedToast => 'Failed to save order.';
+
+  @override
+  String get profileSetupTagline =>
+      'Add a photo and your name\nso your person can recognize you.';
+
+  @override
+  String profileSetupNameHint(int max) {
+    return 'Your name (max $max)';
+  }
+
+  @override
+  String get profileSetupSaveFailedToast => 'Failed to save profile.';
+
+  @override
+  String get pairingTagline =>
+      'Share your invite code or\nenter your person\'s code to pair.';
+
+  @override
+  String get pairingYourInviteCode => 'Your invite code';
+
+  @override
+  String get pairingEnterPersonCodeButton => 'Enter person\'s code';
+
+  @override
+  String get pairingActionCopy => 'Copy';
+
+  @override
+  String get pairingActionShare => 'Share';
+
+  @override
+  String get pairingEnterCodeHint => 'Your person\'s code';
+
+  @override
+  String get pairingEnterCodeAction => 'Pair';
+
+  @override
+  String get pairingCodeCopiedToast => 'Code copied';
+
+  @override
+  String pairingShareMessage(String code) {
+    return 'Join me on Scenes! Use my invite code: $code';
+  }
+
+  @override
+  String get pairingFailedToast => 'Failed to pair. Please try again.';
+
+  @override
+  String get pairingErrorInvalidCode => 'Invalid code.';
+
+  @override
+  String get pairingErrorAlreadyUsed => 'This code has already been used.';
+
+  @override
+  String get pairingErrorExpired => 'This code has expired.';
+
+  @override
+  String get pairingErrorOwnCode => 'You can\'t use your own code.';
+
+  @override
+  String get pairingErrorInviterUnavailable =>
+      'This code is no longer available.';
+
+  @override
+  String get pairingErrorAlreadyPaired =>
+      'You\'re already paired with someone.';
+
+  @override
+  String get pairingCodeLoadError => 'Could not load code. Tap to retry.';
+
+  @override
+  String get pairingCodeExpiredBadge => 'Expired';
+
+  @override
+  String pairingCodeExpiresHours(int hours, int minutes) {
+    return 'Expires in ${hours}h ${minutes}m';
+  }
+
+  @override
+  String pairingCodeExpiresMinutes(int minutes) {
+    return 'Expires in ${minutes}m';
+  }
+
+  @override
+  String pairingCodeExpiresSeconds(int seconds) {
+    return 'Expires in ${seconds}s';
+  }
+
+  @override
+  String get pairingSignOutConfirmMessage =>
+      'You will need to sign in again to use Scenes.';
+
+  @override
+  String get subscriptionUnavailableError =>
+      'Subscription is not available right now.';
+
+  @override
+  String get subscriptionGenericError => 'Purchase failed. Please try again.';
 
   @override
   String get sceneDetailPlay => 'Play scene';
@@ -217,8 +631,319 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get addMediaDateToday => 'Today';
+
+  @override
+  String addMediaToastSceneFull(int limit) {
+    return 'Scene is full ($limit).';
+  }
+
+  @override
+  String addMediaToastFreeLimit(int limit) {
+    return 'Free scenes hold up to $limit moments. Upgrade for more.';
+  }
+
+  @override
   String get hdBannerBenefitMedia => 'Unlock films, music, and places.';
 
   @override
   String get hdBannerBenefitMoments => 'Up to 100 moments in every scene.';
+
+  @override
+  String get subscriptionTagline => 'Make our scenes more vivid';
+
+  @override
+  String get subscriptionBannerTaglineActive => 'Making our scenes more vivid.';
+
+  @override
+  String get subscriptionBannerLearnMore => 'Learn more';
+
+  @override
+  String get subscriptionFeaturePairTitle => 'One for two';
+
+  @override
+  String get subscriptionFeaturePairDesc =>
+      'When just one of you subscribes, Scenes HD unlocks for both.';
+
+  @override
+  String get subscriptionFeatureMomentTypesTitle => 'More Moment Types';
+
+  @override
+  String get subscriptionFeatureMomentTypesDesc =>
+      'Add films, music, and places to your scenes.';
+
+  @override
+  String get subscriptionFeatureMomentsPerSceneTitle =>
+      'More Moments per Scene';
+
+  @override
+  String get subscriptionFeatureMomentsPerSceneDesc =>
+      'Capture up to 100 moments in every scene, instead of 30.';
+
+  @override
+  String get subscriptionFeatureReactionCommentsTitle => 'Reaction Comments';
+
+  @override
+  String get subscriptionFeatureReactionCommentsDesc =>
+      'Leave a personal note alongside any reaction.';
+
+  @override
+  String get subscriptionFeatureReorderTitle => 'Reorder Scenes & Moments';
+
+  @override
+  String get subscriptionFeatureReorderDesc =>
+      'Arrange scenes and moments in any order you like.';
+
+  @override
+  String get subscriptionFeatureFiltersTitle => 'Playback Filters';
+
+  @override
+  String get subscriptionFeatureFiltersDesc =>
+      'Choose from a range of film looks for your playback.';
+
+  @override
+  String get subscriptionFeatureTemplatesTitle => 'More Share Templates';
+
+  @override
+  String get subscriptionFeatureTemplatesDesc =>
+      'Share your scenes with a growing collection of video templates.';
+
+  @override
+  String get subscriptionFooterPair =>
+      'Only one of you needs to subscribe — Scenes HD applies to both of you.';
+
+  @override
+  String subscriptionFooterPlan(String price) {
+    return 'Scenes HD is a monthly auto-renewing subscription at $price/month, with a 7-day free trial for new subscribers.';
+  }
+
+  @override
+  String subscriptionFooterTrialConversion(String price) {
+    return 'Your 7-day free trial automatically converts to a paid monthly subscription at $price when the trial ends. To avoid being charged, cancel at least 24 hours before your trial ends.';
+  }
+
+  @override
+  String get subscriptionFooterTrialEligibility =>
+      'The free trial is available to new subscribers only. If you have previously subscribed with this Apple ID (including through Family Sharing), you may not be eligible for another free trial.';
+
+  @override
+  String get subscriptionFooterCharge =>
+      'Payment will be charged to your Apple ID account at confirmation of purchase.';
+
+  @override
+  String subscriptionFooterRenewal(String price) {
+    return 'Your subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period at $price/month.';
+  }
+
+  @override
+  String get subscriptionFooterManage =>
+      'You can manage or cancel your subscription in your App Store account settings after purchase. Any unused portion of a free trial will be forfeited when you start a paid subscription.';
+
+  @override
+  String subscriptionCtaSubscribe(String price) {
+    return 'Subscribe for $price/mo';
+  }
+
+  @override
+  String get subscriptionCtaManage => 'Manage Subscription';
+
+  @override
+  String subscriptionCtaThanks(String name) {
+    return 'Thanks to $name';
+  }
+
+  @override
+  String get subscriptionFreeBadge => 'Free for 7 days';
+
+  @override
+  String get subscriptionLinkPrivacy => 'Privacy Policy';
+
+  @override
+  String get subscriptionLinkRestore => 'Restore';
+
+  @override
+  String get subscriptionLinkTerms => 'Terms of Service';
+
+  @override
+  String get subscriptionToastWelcome => 'Welcome to Scenes HD.';
+
+  @override
+  String get subscriptionToastRestored => 'Subscription restored.';
+
+  @override
+  String get subscriptionToastNothingToRestore => 'No purchases to restore.';
+
+  @override
+  String get notificationsBannerTitle => 'Turn on notifications';
+
+  @override
+  String notificationsBannerBodyWithName(String name) {
+    return 'Enable in Settings to receive $name\'s activity and updates.';
+  }
+
+  @override
+  String get notificationsBannerBodyNoName =>
+      'Enable in Settings to receive your partner\'s activity and updates.';
+
+  @override
+  String get notificationsLoadError => 'Could not load preferences.';
+
+  @override
+  String get notificationsPartnerActivityLabel => 'Partner activity';
+
+  @override
+  String get notificationsPartnerActivityDesc =>
+      'When your partner adds scenes, moments, or likes yours.';
+
+  @override
+  String get notificationsAppNewsLabel => 'App news';
+
+  @override
+  String get notificationsAppNewsDesc =>
+      'Updates about new features and announcements.';
+
+  @override
+  String get signOutConfirmTitle => 'Sign Out?';
+
+  @override
+  String get signOutConfirmMessage =>
+      'You will need to sign in again to use Scenes.';
+
+  @override
+  String get signOutConfirmAction => 'Sign Out';
+
+  @override
+  String get disconnectConfirmTitle => 'Disconnect?';
+
+  @override
+  String get disconnectConfirmMessage =>
+      'You and your person will be unpaired.';
+
+  @override
+  String get disconnectConfirmAction => 'Disconnect';
+
+  @override
+  String get disconnectFailedToast => 'Failed to disconnect.';
+
+  @override
+  String get deleteAccountConfirmTitle => 'Delete account?';
+
+  @override
+  String get deleteAccountConfirmMessage => 'This cannot be undone.';
+
+  @override
+  String get deleteAccountConfirmAction => 'Delete';
+
+  @override
+  String get deleteAccountFailedToast => 'Failed to delete account.';
+
+  @override
+  String get deleteAccountActiveSubTitle => 'Active subscription';
+
+  @override
+  String get deleteAccountActiveSubMessage =>
+      'Cancel your subscription in System Settings to stop being charged. Deleting your account here does not cancel it.';
+
+  @override
+  String get deleteAccountActiveSubConfirm => 'Delete anyway';
+
+  @override
+  String get deleteAccountActiveSubCancel => 'Manage subscription';
+
+  @override
+  String get commonCancel => 'Cancel';
+
+  @override
+  String get settingsAppVersion => 'Version';
+
+  @override
+  String get creditMoreButton => 'More';
+
+  @override
+  String get settingsAppLock => 'App Lock';
+
+  @override
+  String get lockTitleSetup => 'Set Up Lock';
+
+  @override
+  String get lockTitleChange => 'Change PIN';
+
+  @override
+  String get lockTitleVerify => 'Confirm PIN';
+
+  @override
+  String get lockEnterCurrent => 'Enter your current PIN';
+
+  @override
+  String get lockEnterCurrentDesc => 'We\'ll verify it before continuing.';
+
+  @override
+  String get lockEnterNew => 'Enter a new 4-digit PIN';
+
+  @override
+  String get lockEnterNewDesc => 'You\'ll use this to unlock the app.';
+
+  @override
+  String get lockConfirmNew => 'Confirm your new PIN';
+
+  @override
+  String get lockConfirmNewDesc => 'Re-enter the same PIN.';
+
+  @override
+  String get lockSettingsHeader => 'App Lock';
+
+  @override
+  String get lockSettingsEnabledDesc => 'App Lock is on.';
+
+  @override
+  String get lockSettingsDisabledDesc => 'Require a PIN to open the app.';
+
+  @override
+  String get lockSetUpButton => 'Set Up PIN';
+
+  @override
+  String get lockChangePinButton => 'Change PIN';
+
+  @override
+  String get lockDisableButton => 'Turn Off App Lock';
+
+  @override
+  String get lockBiometricToggle => 'Unlock with Face ID / Touch ID';
+
+  @override
+  String get lockBiometricUnavailable =>
+      'Biometric authentication is not available on this device.';
+
+  @override
+  String get lockRecoveryNotice =>
+      'If you forget your PIN, sign in again to reset App Lock.';
+
+  @override
+  String get lockChallengeTitle => 'Enter PIN';
+
+  @override
+  String get lockBiometricPrompt => 'Unlock Scenes';
+
+  @override
+  String get lockForgotPin => 'Forgot PIN?';
+
+  @override
+  String get lockForgotConfirmTitle => 'Sign Out?';
+
+  @override
+  String get lockForgotConfirmBody =>
+      'Signing out will turn off App Lock. After signing in again, you\'ll need to set it up from Settings.';
+
+  @override
+  String get lockForgotConfirmAction => 'Sign Out';
+
+  @override
+  String get lockDisableConfirmTitle => 'Turn Off App Lock?';
+
+  @override
+  String get lockDisableConfirmBody =>
+      'PIN and biometric settings will be cleared.';
+
+  @override
+  String get lockDisableConfirmAction => 'Turn Off';
 }

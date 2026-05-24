@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../l10n/app_localizations.dart';
 
 /// Moment의 occurred_at 날짜를 고르는 floating 바텀시트 본문.
 ///
@@ -44,7 +45,9 @@ class _MomentDatePickerSheetState extends State<MomentDatePickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = DateFormat.yMMMMd('en').format(_selected);
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final dateStr = DateFormat.yMMMMd(locale).format(_selected);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -101,7 +104,7 @@ class _MomentDatePickerSheetState extends State<MomentDatePickerSheet> {
                 ),
                 child: Center(
                   child: Text(
-                    'Confirm',
+                    l10n.datePickerConfirm,
                     style: AppTypography.body(15, weight: FontWeight.w600)
                         .copyWith(color: context.colors.background),
                   ),

@@ -17,19 +17,19 @@ String romanNumeralLower(int n) {
       i[n % 10];
 }
 
-/// Scene에 담긴 여러 날짜를 한 줄 메타로 축약한다. 결과는 로케일별 관습에
-/// 맞춰 다르게 포맷된다.
+/// Scene에 담긴 여러 날짜를 한 줄 메타로 축약한다. 연도는 항상 노출 —
+/// 사용자 요청에 따라 "각 항목별 연도가 한눈에 보이도록".
 ///
 /// **English/Latin locale (소문자):**
-/// - 하루: `14 apr`
-/// - 같은 달 범위: `11–14 apr`
-/// - 월 걸침: `28 apr – 2 may`
+/// - 하루: `14 apr 2026`
+/// - 같은 달 범위: `11–14 apr 2026`
+/// - 월 걸침: `28 apr – 2 may 2026`
 /// - 해 걸침: `28 dec 2025 – 2 jan 2026`
 ///
 /// **Korean locale:**
-/// - 하루: `4월 14일`
-/// - 같은 달 범위: `4월 11–14일`
-/// - 월 걸침: `4월 28일 – 5월 2일`
+/// - 하루: `2026년 4월 14일`
+/// - 같은 달 범위: `2026년 4월 11–14일`
+/// - 월 걸침: `2026년 4월 28일 – 5월 2일`
 /// - 해 걸침: `2025년 12월 28일 – 2026년 1월 2일`
 String formatSceneDateRange(List<DateTime> dates, String locale) {
   if (dates.isEmpty) return '';
@@ -42,13 +42,13 @@ String formatSceneDateRange(List<DateTime> dates, String locale) {
 
   if (locale.startsWith('ko')) {
     if (sameDay) {
-      return '${first.month}월 ${first.day}일';
+      return '${first.year}년 ${first.month}월 ${first.day}일';
     }
     if (sameMonth) {
-      return '${first.month}월 ${first.day}–${last.day}일';
+      return '${first.year}년 ${first.month}월 ${first.day}–${last.day}일';
     }
     if (sameYear) {
-      return '${first.month}월 ${first.day}일 – '
+      return '${first.year}년 ${first.month}월 ${first.day}일 – '
           '${last.month}월 ${last.day}일';
     }
     return '${first.year}년 ${first.month}월 ${first.day}일 – '
@@ -62,12 +62,14 @@ String formatSceneDateRange(List<DateTime> dates, String locale) {
 
   String lower(String s) => s.toLowerCase();
 
-  if (sameDay) return lower(dayMonth.format(first));
+  if (sameDay) return lower(dayMonthYear.format(first));
   if (sameMonth) {
-    return lower('${first.day}–${last.day} ${monthOnly.format(first)}');
+    return lower(
+        '${first.day}–${last.day} ${monthOnly.format(first)} ${first.year}');
   }
   if (sameYear) {
-    return lower('${dayMonth.format(first)} – ${dayMonth.format(last)}');
+    return lower(
+        '${dayMonth.format(first)} – ${dayMonth.format(last)} ${first.year}');
   }
   return lower('${dayMonthYear.format(first)} – ${dayMonthYear.format(last)}');
 }

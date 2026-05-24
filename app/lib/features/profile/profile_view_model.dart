@@ -12,9 +12,11 @@ import 'models/profile.dart';
 class MyProfileViewModel extends AsyncNotifier<Profile?> {
   @override
   Future<Profile?> build() async {
-    // 세션 변동 감지 — 로그인/로그아웃 시 build 재실행되어 새 profile 로드.
-    final session = ref.watch(authViewModelProvider.select((s) => s.session));
-    if (session == null) return null;
+    // 로그인 유저 id만 관찰 — 로그인/로그아웃 시 build 재실행되어 새 profile
+    // 로드. 토큰 갱신으로 Session 객체만 바뀌는 경우엔 refetch하지 않는다.
+    final userId =
+        ref.watch(authViewModelProvider.select((s) => s.session?.user.id));
+    if (userId == null) return null;
     return ref.read(profileRepositoryProvider).getMyProfile();
   }
 

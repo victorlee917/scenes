@@ -3,12 +3,18 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/app_urls.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/widgets/app_toast.dart';
+import '../../l10n/app_localizations.dart';
 import '../home/home_view_model.dart';
 import '../home/widgets/detail_app_bar.dart';
+import 'data/purchases_repository.dart';
+import 'purchases_view_model.dart';
 import 'subscription_view_model.dart';
 
 /// Scenes HD 구독 화면.
@@ -32,6 +38,10 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerController;
 
+  // RC가 지역화 가격을 못 줄 때(로딩 중·미설정)만 쓰는 fallback — USD
+  // 기준가. 정상 경로에선 storeProduct.priceString(지역 통화)을 쓴다.
+  static const _fallbackMonthlyPrice = r'$4.99';
+
   @override
   void initState() {
     super.initState();
@@ -50,14 +60,36 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final l10n = AppLocalizations.of(context);
     final isSubscribed = ref.watch(isSubscribedProvider);
     final subscribedBySelf = ref.watch(subscriptionViewModelProvider
-        .select((s) => s.subscribedBySelf));
+        .select((s) => s.valueOrNull?.subscribedBySelf ?? false));
     final couple = ref.watch(homeViewModelProvider.select((s) => s.couple));
     // 구독 라벨에 들어갈 이름. partnerA = 본인, partnerB = 파트너.
     final subscriberName = subscribedBySelf
         ? couple.partnerAName
         : couple.partnerBName;
+    final purchaseAction = ref.watch(purchasesViewModelProvider);
+    final purchasesNotifier = ref.read(purchasesViewModelProvider.notifier);
+    // RC가 주는 지역화 가격(예: "$4.99", "₩6,500"). 로딩 중·미설정이면
+    // fallback(USD 기준가)으로 표시.
+    final monthlyPrice =
+        ref.watch(monthlyPriceProvider).valueOrNull ?? _fallbackMonthlyPrice;
+
+    // 구매 액션 중 발생한 에러는 toast로 1회 노출 후 reset — viewmodel state는
+    // 한 번 보여주고 sticky하게 남기지 않음. VM이 저장한 sentinel code를 여기서
+    // l10n으로 매핑(raw exception 메시지를 사용자에게 노출하지 않음).
+    ref.listen(
+      purchasesViewModelProvider.select((s) => s.error),
+      (_, next) {
+        if (next == null || next.isEmpty) return;
+        final message = next == PurchasesErrorCode.unavailable
+            ? l10n.subscriptionUnavailableError
+            : l10n.subscriptionGenericError;
+        AppToast.show(context, message);
+        purchasesNotifier.clearError();
+      },
+    );
 
     return Scaffold(
       // backgroundColor handled by theme
@@ -85,7 +117,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Make our scenes more vivid.',
+                    l10n.subscriptionTagline,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(16).copyWith(
                       color: context.colors.foregroundMuted,
@@ -101,46 +133,39 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 36),
                   _FeatureCard(
-                    title: 'One subscribes, both shine',
-                    description:
-                        'Scenes HD unlocks for both of you.',
+                    title: l10n.subscriptionFeaturePairTitle,
+                    description: l10n.subscriptionFeaturePairDesc,
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'More Media Types',
-                    description:
-                        'Add films, music, and places to your scenes.',
+                    title: l10n.subscriptionFeatureMomentTypesTitle,
+                    description: l10n.subscriptionFeatureMomentTypesDesc,
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'More Moments per Scene',
-                    description:
-                        'Capture up to 100 moments in every scene, instead of 30.',
+                    title: l10n.subscriptionFeatureMomentsPerSceneTitle,
+                    description: l10n.subscriptionFeatureMomentsPerSceneDesc,
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'Reorder Scenes',
-                    description:
-                        'Arrange your scenes in any order you like.',
+                    title: l10n.subscriptionFeatureReactionCommentsTitle,
+                    description: l10n.subscriptionFeatureReactionCommentsDesc,
                   ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'Play Multiple Scenes',
-                    description:
-                        'Relive your memories in a cinematic sequence.',
+                    title: l10n.subscriptionFeatureReorderTitle,
+                    description: l10n.subscriptionFeatureReorderDesc,
                   ),
                   // TODO: Web Sharing 혜택 카드. 오픈 스펙에서 제외.
-                  // const SizedBox(height: 12),
-                  // _FeatureCard(
-                  //   title: 'Web Sharing',
-                  //   description:
-                  //       'Share your scenes as a beautiful webpage.',
-                  // ),
                   const SizedBox(height: 12),
                   _FeatureCard(
-                    title: 'Playback Filters',
-                    description:
-                        'Choose from a range of film looks for your playback.',
+                    title: l10n.subscriptionFeatureFiltersTitle,
+                    description: l10n.subscriptionFeatureFiltersDesc,
+                  ),
+                  const SizedBox(height: 12),
+                  _FeatureCard(
+                    title: l10n.subscriptionFeatureTemplatesTitle,
+                    description: l10n.subscriptionFeatureTemplatesDesc,
                   ),
                   const SizedBox(height: 36),
                   Center(
@@ -152,7 +177,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 36),
                   Text(
-                    'Only one of you needs to subscribe — Scenes HD applies to both of you.',
+                    l10n.subscriptionFooterPair,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -161,7 +186,25 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Scenes HD is a monthly auto-renewing subscription at \$4.99/month, with a 7-day free trial for new subscribers.',
+                    l10n.subscriptionFooterPlan(monthlyPrice),
+                    textAlign: TextAlign.center,
+                    style: AppTypography.body(11).copyWith(
+                      color: context.colors.foregroundMuted.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.subscriptionFooterTrialConversion(monthlyPrice),
+                    textAlign: TextAlign.center,
+                    style: AppTypography.body(11).copyWith(
+                      color: context.colors.foregroundMuted.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.subscriptionFooterTrialEligibility,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -170,7 +213,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 12),
                   Text(
-                    'Payment will be charged to your Apple ID account at confirmation of purchase.',
+                    l10n.subscriptionFooterCharge,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -179,7 +222,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Your subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period at \$4.99/month.',
+                    l10n.subscriptionFooterRenewal(monthlyPrice),
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -188,7 +231,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'You can manage or cancel your subscription in your App Store account settings after purchase. Any unused portion of a free trial will be forfeited when you start a paid subscription.',
+                    l10n.subscriptionFooterManage,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(11).copyWith(
                       color: context.colors.foregroundMuted.withValues(alpha: 0.6),
@@ -235,18 +278,45 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                       alignment: Alignment.topCenter,
                       children: [
                         GestureDetector(
-                          onTap: isSubscribed
+                          onTap: purchaseAction.isBusy
                               ? null
-                              : () {
-                                  // 구독 결제. UI는 추후.
+                              : () async {
+                                  if (isSubscribed) {
+                                    // 가입자: RC Customer Center 진입 — 구독
+                                    // 관리/환불 안내/만료일 확인 등 사용자 직접.
+                                    await purchasesNotifier.openCustomerCenter();
+                                    return;
+                                  }
+                                  // 무료 회원: StoreKit 결제 시트 직접 호출
+                                  // (RC Paywall 사용 안 함 — 우리 SubscriptionScreen이
+                                  // 곧 paywall).
+                                  final outcome =
+                                      await purchasesNotifier.purchaseMonthly();
+                                  if (!context.mounted) return;
+                                  switch (outcome) {
+                                    case PurchaseOutcome.purchased:
+                                      AppToast.show(
+                                        context,
+                                        l10n.subscriptionToastWelcome,
+                                      );
+                                    case PurchaseOutcome.cancelled:
+                                      // 사용자가 시트 닫음 — 알림 없이 무시.
+                                      break;
+                                    case PurchaseOutcome.unavailable:
+                                    case PurchaseOutcome.error:
+                                      // error toast는 viewmodel.error listener가
+                                      // 처리.
+                                      break;
+                                  }
                                 },
                           child: _SubscriptionPrimaryButton(
                             isSubscribed: isSubscribed,
                             label: isSubscribed
                                 ? (subscriberName.isEmpty
-                                    ? 'Subscribed'
-                                    : 'Thanks to $subscriberName')
-                                : 'Subscribe for \$4.99/mo',
+                                    ? l10n.subscriptionCtaManage
+                                    : l10n.subscriptionCtaThanks(
+                                        subscriberName))
+                                : l10n.subscriptionCtaSubscribe(monthlyPrice),
                           ),
                         ),
                         if (!isSubscribed)
@@ -289,7 +359,7 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                                   );
                                 },
                                 child: Text(
-                                  'Free for 7 days',
+                                  l10n.subscriptionFreeBadge,
                                   style: AppTypography.body(11,
                                           weight: FontWeight.w500)
                                       .copyWith(
@@ -307,10 +377,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                     children: [
                       GestureDetector(
                         onTap: () {
-                          // 개인정보처리방침. UI는 추후.
+                          // ignore: discarded_futures
+                          launchUrl(
+                            Uri.parse(AppUrls.privacyPolicy),
+                            mode: LaunchMode.externalApplication,
+                          );
                         },
                         child: Text(
-                          'Privacy Policy',
+                          l10n.subscriptionLinkPrivacy,
                           style: AppTypography.body(12).copyWith(
                             color: context.colors.foregroundMuted,
                           ),
@@ -327,11 +401,21 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                           ),
                         ),
                         GestureDetector(
-                          onTap: () {
-                            // TODO: RevenueCat / StoreKit restorePurchases 호출.
-                          },
+                          onTap: purchaseAction.isBusy
+                              ? null
+                              : () async {
+                                  final restored = await purchasesNotifier
+                                      .restorePurchases();
+                                  if (!context.mounted) return;
+                                  AppToast.show(
+                                    context,
+                                    restored
+                                        ? l10n.subscriptionToastRestored
+                                        : l10n.subscriptionToastNothingToRestore,
+                                  );
+                                },
                           child: Text(
-                            'Restore',
+                            l10n.subscriptionLinkRestore,
                             style: AppTypography.body(12).copyWith(
                               color: context.colors.foregroundMuted,
                             ),
@@ -349,10 +433,14 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                       ),
                       GestureDetector(
                         onTap: () {
-                          // 서비스이용약관. UI는 추후.
+                          // ignore: discarded_futures
+                          launchUrl(
+                            Uri.parse(AppUrls.termsOfService),
+                            mode: LaunchMode.externalApplication,
+                          );
                         },
                         child: Text(
-                          'Terms of Service',
+                          l10n.subscriptionLinkTerms,
                           style: AppTypography.body(12).copyWith(
                             color: context.colors.foregroundMuted,
                           ),

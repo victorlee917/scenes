@@ -31,31 +31,37 @@ class CoupleRepository {
 
   /// 본인이 멤버인 active couple 한 건 + 상대방 profile.
   /// 페어가 없으면 null.
+  ///
+  /// couples row와 양쪽 partner profile을 PostgREST embedded join으로 한 번에
+  /// 조회 — FK `couples.partner_a_id`/`partner_b_id` → `profiles.id` 기반.
+  /// RLS의 `profiles_select_partner` 정책이 active 페어 기간 동안 상대 profile
+  /// read를 허용하므로 내 쪽·상대 쪽 embed 모두 채워진다. (예전엔 couples 1회
+  /// + profiles 1회로 두 번 왕복하던 걸 한 번으로 합침.)
   Future<ActiveCoupleAndPartner?> getMyActiveCouple() async {
     final myId = _myId;
     if (myId == null) return null;
 
-    final coupleRow = await _client
+    final row = await _client
         .from('couples')
-        .select()
+        .select(
+          '*, '
+          'partner_a:profiles!partner_a_id(*), '
+          'partner_b:profiles!partner_b_id(*)',
+        )
         .or('partner_a_id.eq.$myId,partner_b_id.eq.$myId')
         .eq('status', 'active')
         .maybeSingle();
-    if (coupleRow == null) return null;
+    if (row == null) return null;
 
-    final couple = CoupleRecord.fromJson(coupleRow);
-    final partnerId = couple.partnerIdFor(myId);
-
-    final partnerRow = await _client
-        .from('profiles')
-        .select()
-        .eq('id', partnerId)
-        .maybeSingle();
-    if (partnerRow == null) return null;
+    final couple = CoupleRecord.fromJson(row);
+    // 내가 partner_a면 상대는 partner_b 쪽 embed, 그 반대도 마찬가지.
+    final partnerJson =
+        myId == couple.partnerAId ? row['partner_b'] : row['partner_a'];
+    if (partnerJson is! Map) return null;
 
     return ActiveCoupleAndPartner(
       couple: couple,
-      partner: Profile.fromJson(partnerRow),
+      partner: Profile.fromJson(Map<String, dynamic>.from(partnerJson)),
     );
   }
 

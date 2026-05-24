@@ -1,25 +1,34 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors_ext.dart';
 import '../theme/app_radii.dart';
 import '../theme/app_typography.dart';
+import 'glass_panel.dart';
 
 class AppToast {
   AppToast._();
 
+  // 현재 떠 있는 토스트. 새 토스트를 띄울 때 교체해 화면에 쌓이지 않게 한다.
+  static OverlayEntry? _active;
+
   static void show(BuildContext context, String message) {
     final overlay = Overlay.of(context);
-    late final OverlayEntry entry;
+    // 이미 떠 있는 토스트가 있으면 제거하고 새 것으로 교체.
+    if (_active?.mounted ?? false) _active!.remove();
+    _active = null;
 
+    late final OverlayEntry entry;
     entry = OverlayEntry(
       builder: (ctx) => _ToastOverlay(
         message: message,
-        onDismiss: () => entry.remove(),
+        onDismiss: () {
+          // 교체로 이미 제거됐을 수 있어 mounted 가드.
+          if (entry.mounted) entry.remove();
+          if (identical(_active, entry)) _active = null;
+        },
       ),
     );
-
+    _active = entry;
     overlay.insert(entry);
   }
 }
@@ -67,35 +76,27 @@ class _ToastOverlayState extends State<_ToastOverlay>
   Widget build(BuildContext context) {
     final bottom = MediaQuery.paddingOf(context).bottom + 80;
 
+    // 좌우 24px 마진 — 긴 메시지도 화면 폭 끝까지 꽉 차지 않게. 짧은 메시지는
+    // Center로 가운데에 작은 알약, 긴 메시지는 줄바꿈되며 가운데 정렬.
     return Positioned(
-      left: 0,
-      right: 0,
+      left: 24,
+      right: 24,
       bottom: bottom,
       child: FadeTransition(
         opacity: _opacity,
         child: Center(
-          child: ClipRRect(
+          child: GlassPanel(
             borderRadius: AppRadii.xlBorder,
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-                decoration: BoxDecoration(
-                  color: context.colors.clickableArea.withValues(alpha: 0.82),
-                  borderRadius: AppRadii.xlBorder,
-                  border: Border.all(
-                    color: context.colors.foreground.withValues(alpha: 0.08),
-                    width: 0.5,
-                  ),
-                ),
-                child: DefaultTextStyle(
-                  style: AppTypography.body(14, weight: FontWeight.w500)
-                      .copyWith(color: context.colors.foreground),
-                  child: Text(widget.message),
-                ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 10,
+              ),
+              child: DefaultTextStyle(
+                textAlign: TextAlign.center,
+                style: AppTypography.body(14, weight: FontWeight.w500)
+                    .copyWith(color: context.colors.foreground, height: 1.4),
+                child: Text(widget.message),
               ),
             ),
           ),

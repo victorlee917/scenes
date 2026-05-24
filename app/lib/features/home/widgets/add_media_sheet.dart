@@ -18,7 +18,7 @@ import 'film_picker_screen.dart';
 import 'music_picker_screen.dart';
 import 'photo_picker_screen.dart';
 import 'place_picker_screen.dart';
-import 'scene_title_fallback.dart';
+import 'scene_cover_image.dart';
 import '../home_view_model.dart';
 import '../models/scene.dart';
 
@@ -111,17 +111,12 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
   /// 반환값이 true면 호출자는 진행, false면 중단.
   bool _gateOrToast(bool isHd) {
     if (!_isFull(isHd)) return true;
+    final l10n = AppLocalizations.of(context);
     final limit = _limit(isHd);
     if (isHd) {
-      AppToast.show(
-        context,
-        'Scene is full ($limit). Delete some to add more.',
-      );
+      AppToast.show(context, l10n.addMediaToastSceneFull(limit));
     } else {
-      AppToast.show(
-        context,
-        'Free scenes hold up to $limit moments. Upgrade for more.',
-      );
+      AppToast.show(context, l10n.addMediaToastFreeLimit(limit));
     }
     return false;
   }
@@ -158,8 +153,15 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final scene = _selectedScene;
-    final isSubscribed = ref.watch(isSubscribedProvider);
+    // 구독 상태 — 아직 로딩 중이면 false(무료)로 보고 무료 레이아웃을 그린다.
+    // 무료/유료 레이아웃은 높이가 거의 같게 설계돼 있어 로딩이 끝나 유료로
+    // 바뀌어도 시트 높이 점프 없이 내용만 교체된다. (예전엔 로딩 중 빈 위젯을
+    // 그려 시트가 작게 떴다가 커지는 문제가 있었다.)
+    final isSubscribed =
+        ref.watch(subscriptionViewModelProvider).valueOrNull?.isSubscribed ??
+            false;
     final limit = _limit(isSubscribed);
     final remaining = _remaining(isSubscribed);
     final isFull = _isFull(isSubscribed);
@@ -187,7 +189,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                   child: SizedBox(
                     width: 48,
                     height: 48,
-                    child: _SceneCoverOrFallback(scene: scene),
+                    child: SceneCoverImage(scene: scene),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -215,7 +217,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
             ),
           ),
 
-          const SizedBox(height: 32),
+          const SizedBox(height: 24),
         ],
 
         if (isSubscribed)
@@ -232,7 +234,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                   height: 80,
                   child: _MediaTypeCell(
                     icon: FontAwesomeIcons.solidImage,
-                    label: 'Photo',
+                    label: l10n.mediaLabelPhoto,
                     onTap: () {
                       if (!_gateOrToast(isSubscribed)) return;
                       Navigator.of(context).pop();
@@ -256,7 +258,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                       Expanded(
                         child: _MediaTypeCell(
                           icon: FontAwesomeIcons.film,
-                          label: 'Film',
+                          label: l10n.mediaLabelFilm,
                           onTap: () {
                             if (!_gateOrToast(isSubscribed)) return;
                             Navigator.of(context).pop();
@@ -274,7 +276,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                       Expanded(
                         child: _MediaTypeCell(
                           icon: FontAwesomeIcons.music,
-                          label: 'Music',
+                          label: l10n.mediaLabelMusic,
                           onTap: () {
                             if (!_gateOrToast(isSubscribed)) return;
                             Navigator.of(context).pop();
@@ -292,7 +294,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                       Expanded(
                         child: _MediaTypeCell(
                           icon: FontAwesomeIcons.locationDot,
-                          label: 'Place',
+                          label: l10n.mediaLabelPlace,
                           onTap: () {
                             if (!_gateOrToast(isSubscribed)) return;
                             Navigator.of(context).pop();
@@ -331,7 +333,7 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                   height: 80,
                   child: _MediaTypeCell(
                     icon: FontAwesomeIcons.solidImage,
-                    label: 'Photo',
+                    label: l10n.mediaLabelPhoto,
                     onTap: () {
                       if (!_gateOrToast(isSubscribed)) return;
                       Navigator.of(context).pop();
@@ -397,14 +399,17 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
                               const SizedBox(height: 4),
                               // 시트 열릴 때 _bannerVariant로 결정된 한 가지 카피
                               // 만 노출. 0=매체 다양성, 1=moments 한도 확장.
+                              // 단, scene이 이미 한도까지 다 찼으면(isFull) 매체
+                              // 다양성보다 moments 한도 확장 카피가 더 직접적인
+                              // 동기 부여라 그쪽으로 강제.
                               Text(
-                                _bannerVariant == 0
+                                (isFull || _bannerVariant != 0)
                                     ? AppLocalizations.of(
                                         context,
-                                      ).hdBannerBenefitMedia
+                                      ).hdBannerBenefitMoments
                                     : AppLocalizations.of(
                                         context,
-                                      ).hdBannerBenefitMoments,
+                                      ).hdBannerBenefitMedia,
                                 style: AppTypography.body(12).copyWith(
                                   color: context.colors.foregroundMuted,
                                 ),
@@ -478,7 +483,7 @@ class _ScenePickerDialog extends StatelessWidget {
                           child: SizedBox(
                             width: 36,
                             height: 36,
-                            child: _SceneCoverOrFallback(scene: scene),
+                            child: SceneCoverImage(scene: scene),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -512,26 +517,6 @@ class _ScenePickerDialog extends StatelessWidget {
 }
 
 /// scene_card와 동일한 fallback 정책 — cover URL 없거나 로드 실패 시
-/// 타이틀 첫 글자로 채움. 헤더 아바타(48px)와 scene picker dialog(36px)
-/// 둘 다 같은 위젯 사용해 일관성 유지.
-class _SceneCoverOrFallback extends StatelessWidget {
-  const _SceneCoverOrFallback({required this.scene});
-
-  final Scene scene;
-
-  @override
-  Widget build(BuildContext context) {
-    final url = scene.coverImageUrl;
-    final fallback = SceneTitleFallback(title: scene.title);
-    if (url.isEmpty) return fallback;
-    return Image.network(
-      url,
-      fit: BoxFit.cover,
-      errorBuilder: (_, _, _) => fallback,
-    );
-  }
-}
-
 // ── 날짜 버튼 + 날짜 picker 시트 ──────────────────────────────
 
 /// New Moment 시트 안의 모먼트 날짜 표시·선택 버튼. 매체 cell들 위에 놓여
@@ -547,8 +532,10 @@ class _DateButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
     final isToday = _isSameDay(date, DateTime.now());
-    final label = isToday ? 'Today' : DateFormat.yMMMd('en').format(date);
+    final label = isToday ? l10n.addMediaDateToday : DateFormat.yMMMd(locale).format(date);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,

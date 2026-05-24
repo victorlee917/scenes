@@ -10,6 +10,8 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../../core/widgets/primary_action_button.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../profile/profile_view_model.dart';
 
 /// 프로필 수정 바텀시트.
@@ -133,6 +135,7 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
 
   Future<void> _pickImage() async {
     if (_picking) return;
+    final cropTitle = AppLocalizations.of(context).imageCropperTitle;
     setState(() => _picking = true);
     try {
       final picked = await _picker.pickImage(
@@ -153,12 +156,12 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           IOSUiSettings(
-            title: 'Crop',
+            title: cropTitle,
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
           ),
           AndroidUiSettings(
-            toolbarTitle: 'Crop',
+            toolbarTitle: cropTitle,
             lockAspectRatio: true,
             hideBottomControls: true,
           ),
@@ -203,17 +206,20 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
       Future<void>.delayed(const Duration(milliseconds: 320), () {
         notifier.applyProfile(updated);
       });
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() => _saving = false);
-        // 디버그용: 실제 에러 메시지 노출. 운영 시 generic message로 변경.
-        AppToast.show(context, 'Save failed: $e');
+        AppToast.show(
+          context,
+          AppLocalizations.of(context).editProfileSaveFailed,
+        );
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -293,7 +299,7 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
                 color: context.colors.foreground,
               ),
               decoration: InputDecoration(
-                hintText: 'Name',
+                hintText: l10n.editProfileNameHint,
                 hintStyle: AppTypography.body(15).copyWith(
                   color: context.colors.foregroundMuted.withValues(alpha: 0.5),
                 ),
@@ -312,47 +318,11 @@ class _EditProfileSheetState extends ConsumerState<EditProfileSheet> {
         // 저장 버튼
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: SizedBox(
-            width: double.infinity,
-            child: GestureDetector(
-              onTap: (_hasName && !_saving) ? _save : null,
-              child: AnimatedOpacity(
-                opacity: _hasName ? 1.0 : 0.4,
-                duration: const Duration(milliseconds: 200),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: BoxDecoration(
-                    borderRadius: AppRadii.sheetInnerBorder,
-                    color: context.colors.foreground,
-                  ),
-                  alignment: Alignment.center,
-                  // 고정 높이로 감싸서 spinner ↔ 'Save' 전환 시 버튼 높이가
-                  // 변하지 않도록. (그 변화가 시트 전체 layout을 한 번 덜컹이게 함.)
-                  child: SizedBox(
-                    height: 22,
-                    child: Center(
-                      child: _saving
-                          ? SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: context.colors.background,
-                              ),
-                            )
-                          : Text(
-                              'Save',
-                              style:
-                                  AppTypography.body(16, weight: FontWeight.w600)
-                                      .copyWith(
-                                color: context.colors.background,
-                              ),
-                            ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
+          child: PrimaryActionButton(
+            label: l10n.actionSave,
+            enabled: _hasName,
+            loading: _saving,
+            onTap: _save,
           ),
         ),
 

@@ -3,7 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/app_urls.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
@@ -13,6 +15,8 @@ import '../auth/auth_view_model.dart';
 import '../home/widgets/detail_app_bar.dart';
 import '../onboarding/noti_prompt_screen.dart';
 import 'danger_zone_screen.dart';
+import 'language_screen.dart';
+import 'lock_screen.dart';
 import 'notifications_screen.dart';
 import 'theme_screen.dart';
 
@@ -20,7 +24,7 @@ import 'theme_screen.dart';
 ///
 /// 세 섹션으로 구성:
 /// - Preferences: 테마, 푸시 알림 (토글)
-/// - About: 개인정보처리방침, 서비스이용약관, 인스타그램
+/// - About: 개인정보 처리 방침, 서비스 이용 약관, 인스타그램
 /// - Account: 로그아웃, 탈퇴
 ///
 /// 각 항목은 아직 동작을 연결하지 않았음.
@@ -96,7 +100,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 bottom: padding.bottom + 40,
               ),
               children: [
-                _SectionHeader(label: 'Account'),
                 _AccountTile(
                   email: user?.email ?? '',
                   joinedDate: _formatJoinedDate(user?.createdAt, localeTag),
@@ -116,6 +119,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     Navigator.of(context).push(NotificationsScreen.route());
                   },
                 ),
+                _SettingsTile(
+                  label: l10n.settingsAppLock,
+                  onTap: () {
+                    Navigator.of(context).push(LockScreen.route());
+                  },
+                ),
+                _SettingsTile(
+                  label: l10n.settingsLanguage,
+                  onTap: () {
+                    Navigator.of(context).push(LanguageScreen.route());
+                  },
+                ),
                 // [DEBUG] noti-prompt 화면 디자인 미리보기용. 확인 끝나면 삭제.
                 _SettingsTile(
                   label: 'Preview noti prompt',
@@ -131,18 +146,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _SectionHeader(label: l10n.settingsSectionAbout),
                 _SettingsTile(
                   label: l10n.settingsPrivacyPolicy,
-                  onTap: () {},
+                  onTap: () {
+                    // ignore: discarded_futures
+                    launchUrl(
+                      Uri.parse(AppUrls.privacyPolicy),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _SettingsTile(
                   label: l10n.settingsTermsOfService,
-                  onTap: () {},
+                  onTap: () {
+                    // ignore: discarded_futures
+                    launchUrl(
+                      Uri.parse(AppUrls.termsOfService),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _SettingsTile(
                   label: l10n.settingsInstagram,
-                  onTap: () {},
+                  onTap: () {
+                    // ignore: discarded_futures
+                    launchUrl(
+                      Uri.parse(AppUrls.instagram),
+                      mode: LaunchMode.externalApplication,
+                    );
+                  },
                 ),
                 _SettingsTile(
-                  label: 'Version',
+                  label: l10n.settingsAppVersion,
                   trailing: Text(
                     '1.0.0',
                     style: AppTypography.body(14).copyWith(
@@ -157,9 +190,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   onTap: () async {
                     final confirmed = await ConfirmDialog.show(
                       context: context,
-                      title: 'Sign out?',
-                      message: 'You will need to sign in again to use Scenes.',
-                      confirmLabel: 'Sign out',
+                      title: l10n.signOutConfirmTitle,
+                      message: l10n.signOutConfirmMessage,
+                      confirmLabel: l10n.signOutConfirmAction,
                     );
                     if (!confirmed || !context.mounted) return;
                     await ref

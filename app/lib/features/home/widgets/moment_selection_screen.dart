@@ -5,14 +5,15 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../content/contents_view_model.dart';
 import '../home_view_model.dart';
-import '../models/scene.dart';
 import 'detail_app_bar.dart';
 
 /// Playback 시트의 "Select Moments" 버튼이 띄우는 풀스크린 모달.
 ///
-/// 아래에서 위로 슬라이드해 등장. 모든 scene의 콘텐츠(=moment)를 3열
-/// 2:3 그리드로 보여주고, 사용자가 토글해서 재생할 항목을 고른다.
+/// 아래에서 위로 슬라이드해 등장. scope에 들어간 scene들의 콘텐츠(=moment)를
+/// 실제 DB에서 읽어 3열 2:3 그리드로 보여주고, 사용자가 토글해서 재생할
+/// 항목을 고른다. id는 contents.id, 썸네일은 thumb_signed_url.
 class MomentSelectionScreen extends ConsumerStatefulWidget {
   const MomentSelectionScreen({
     super.key,
@@ -63,31 +64,31 @@ class MomentSelectionScreen extends ConsumerStatefulWidget {
 class _MomentSelectionScreenState
     extends ConsumerState<MomentSelectionScreen> {
   late Set<String> _selected;
+  // initiallySelected가 비어 있으면 "전체 재생" 의도. 첫 토글 전까진 모든
+  // moment가 선택된 상태로 보이도록 _autoSelectAll로 표현.
+  late bool _autoSelectAll;
+  // 사용자가 한 번이라도 토글했는지. true가 되면 _selected가 source of truth.
+  bool _seeded = false;
 
   @override
   void initState() {
     super.initState();
-    if (widget.initiallySelected.isNotEmpty) {
-      // 호출부가 명시적으로 선택 집합을 넘겼으면 그대로 유지.
-      _selected = Set<String>.from(widget.initiallySelected);
-    } else {
-      // 빈 집합 = "전체 재생"이라는 시트 측 의미를 그대로 옮겨와,
-      // 첫 진입 시 모든 moment가 선택된 상태로 보인다.
-      final scenes = ref.read(homeViewModelProvider).scenes;
-      _selected = _buildMoments(scenes).map((m) => m.id).toSet();
-    }
+    _selected = Set<String>.from(widget.initiallySelected);
+    _autoSelectAll = widget.initiallySelected.isEmpty;
   }
 
-  void _close() {
-    Navigator.of(context).pop();
-  }
+  void _close() => Navigator.of(context).pop();
 
-  void _apply() {
-    Navigator.of(context).pop(_selected);
-  }
+  void _apply() => Navigator.of(context).pop(_selected);
 
-  void _toggle(String id) {
+  void _toggle(String id, List<_MomentItem> moments) {
     setState(() {
+      if (_autoSelectAll && !_seeded) {
+        // 첫 토글: 시각상 "전체 선택"이었으므로 _selected를 그대로 흡수.
+        _selected = moments.map((m) => m.id).toSet();
+        _seeded = true;
+        _autoSelectAll = false;
+      }
       if (_selected.contains(id)) {
         _selected.remove(id);
       } else {
@@ -96,30 +97,57 @@ class _MomentSelectionScreenState
     });
   }
 
-  /// scene의 콘텐츠 개수만큼 mock moment 항목을 생성. 실제 데이터 연결
-  /// 시 contents 테이블의 row id로 대체된다.
-  /// [sceneIdFilter]가 있으면 해당 scene id만 포함.
-  List<_MomentItem> _buildMoments(List<Scene> scenes) {
+  bool _isTileSelected(String id) {
+    if (_autoSelectAll && !_seeded) return true;
+    return _selected.contains(id);
+  }
+
+  /// scope 안의 scene들에 대해 contentsForSceneProvider를 watch해 실제 DB
+  /// row를 모은 결과. 한 scene이라도 loading이면 anyLoading=true.
+  ({List<_MomentItem> items, bool loading}) _loadMoments() {
+    final scenes = ref.watch(homeViewModelProvider.select((s) => s.scenes));
     final filter = widget.sceneIdFilter;
+    final inScope = filter == null
+        ? scenes
+        : scenes.where((s) => filter.contains(s.id)).toList();
+
     final items = <_MomentItem>[];
-    for (var s = 0; s < scenes.length; s++) {
-      final scene = scenes[s];
-      if (filter != null && !filter.contains(scene.id)) continue;
-      for (var c = 0; c < scene.media.total; c++) {
-        items.add(_MomentItem(
-          id: '${scene.id}_$c',
-          imageUrl: 'https://picsum.photos/seed/moment-$s-$c/400/600',
-        ));
-      }
+    bool anyLoading = false;
+    for (final scene in inScope) {
+      final asyncRes = ref.watch(contentsForSceneProvider(scene.id));
+      asyncRes.when(
+        data: (list) {
+          for (final c in list) {
+            // 썸네일 우선, 없으면 full URL fallback. 둘 다 없으면 스킵.
+            final url = c.thumbSignedUrl ?? c.fullSignedUrl;
+            if (url == null || url.isEmpty) continue;
+            items.add(_MomentItem(
+              id: c.id,
+              imageUrl: url,
+              type: c.type,
+            ));
+          }
+        },
+        loading: () => anyLoading = true,
+        error: (_, _) {
+          // 한 scene 실패는 그 scene만 누락 — 전체 화면은 계속 진행.
+        },
+      );
     }
-    return items;
+    return (items: items, loading: anyLoading);
   }
 
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
-    final scenes = ref.watch(homeViewModelProvider.select((s) => s.scenes));
-    final moments = _buildMoments(scenes);
+    final result = _loadMoments();
+    final moments = result.items;
+    final isLoading = result.loading && moments.isEmpty;
+    // Done 활성화 조건 — 선택된 moment가 1개 이상이면 enable.
+    // _autoSelectAll && !_seeded 상태는 시각상 모두 선택이라 enable로 간주.
+    final hasSelection = (_autoSelectAll && !_seeded)
+        ? moments.isNotEmpty
+        : _selected.isNotEmpty;
 
     return Scaffold(
       backgroundColor: context.colors.background,
@@ -127,45 +155,56 @@ class _MomentSelectionScreenState
         children: [
           // 그리드는 풀스크린, 상단은 앱바 높이만큼 패딩.
           Positioned.fill(
-            child: moments.isEmpty
+            child: isLoading
                 ? Padding(
                     padding: EdgeInsets.only(
                       top: padding.top + DetailAppBar.barHeight + 16,
                     ),
                     child: Center(
-                      child: Text(
-                        'No moments yet.',
-                        style: AppTypography.body(13).copyWith(
-                          color: context.colors.foregroundMuted,
-                        ),
+                      child: CircularProgressIndicator(
+                        color: context.colors.foreground,
+                        strokeWidth: 1.5,
                       ),
                     ),
                   )
-                : GridView.builder(
-                    padding: EdgeInsets.fromLTRB(
-                      16,
-                      padding.top + DetailAppBar.barHeight + 16,
-                      16,
-                      padding.bottom + 24,
-                    ),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      crossAxisSpacing: 8,
-                      mainAxisSpacing: 8,
-                      childAspectRatio: 2 / 3,
-                    ),
-                    itemCount: moments.length,
-                    itemBuilder: (context, index) {
-                      final m = moments[index];
-                      final selected = _selected.contains(m.id);
-                      return _MomentTile(
-                        imageUrl: m.imageUrl,
-                        selected: selected,
-                        onTap: () => _toggle(m.id),
-                      );
-                    },
-                  ),
+                : moments.isEmpty
+                    ? Padding(
+                        padding: EdgeInsets.only(
+                          top: padding.top + DetailAppBar.barHeight + 16,
+                        ),
+                        child: Center(
+                          child: Text(
+                            'No moments yet.',
+                            style: AppTypography.body(13).copyWith(
+                              color: context.colors.foregroundMuted,
+                            ),
+                          ),
+                        ),
+                      )
+                    : GridView.builder(
+                        padding: EdgeInsets.fromLTRB(
+                          16,
+                          padding.top + DetailAppBar.barHeight + 16,
+                          16,
+                          padding.bottom + 24,
+                        ),
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          crossAxisSpacing: 8,
+                          mainAxisSpacing: 8,
+                          childAspectRatio: 2 / 3,
+                        ),
+                        itemCount: moments.length,
+                        itemBuilder: (context, index) {
+                          final m = moments[index];
+                          return _MomentTile(
+                            imageUrl: m.imageUrl,
+                            selected: _isTileSelected(m.id),
+                            onTap: () => _toggle(m.id, moments),
+                          );
+                        },
+                      ),
           ),
           // 상단 그라데이션 + 앱바 (콘텐츠가 그 아래로 비치며 fade out).
           Positioned(
@@ -180,15 +219,19 @@ class _MomentSelectionScreenState
               borderOpacity: 0,
               trailing: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                onTap: _apply,
-                // Padding만으로 intrinsic 너비 + barHeight 높이를 만들어
-                // 부모의 Align(centerRight)이 자연스럽게 우측 정렬되도록.
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 14, 8, 14),
-                  child: Text(
-                    'Done',
-                    style: AppTypography.body(15, weight: FontWeight.w600)
-                        .copyWith(color: context.colors.foreground),
+                // 선택된 게 없으면 onTap=null로 비활성. AnimatedOpacity로 dim
+                // 처리해 시각적으로 비활성을 알림.
+                onTap: hasSelection ? _apply : null,
+                child: AnimatedOpacity(
+                  opacity: hasSelection ? 1.0 : 0.4,
+                  duration: const Duration(milliseconds: 200),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(8, 14, 8, 14),
+                    child: Text(
+                      'Done',
+                      style: AppTypography.body(15, weight: FontWeight.w600)
+                          .copyWith(color: context.colors.foreground),
+                    ),
                   ),
                 ),
               ),
@@ -201,9 +244,14 @@ class _MomentSelectionScreenState
 }
 
 class _MomentItem {
-  const _MomentItem({required this.id, required this.imageUrl});
+  const _MomentItem({
+    required this.id,
+    required this.imageUrl,
+    required this.type,
+  });
   final String id;
   final String imageUrl;
+  final String type;
 }
 
 class _MomentTile extends StatelessWidget {
@@ -229,6 +277,7 @@ class _MomentTile extends StatelessWidget {
             Image.network(
               imageUrl,
               fit: BoxFit.cover,
+              gaplessPlayback: true,
               errorBuilder: (_, _, _) => Container(
                 color: context.colors.nonClickableArea,
               ),

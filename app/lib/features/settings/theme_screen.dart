@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
-import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/theme/theme_provider.dart';
@@ -36,19 +35,19 @@ class ThemeScreen extends ConsumerWidget {
             ),
             children: [
               _ThemeOption(
-                label: 'Dark',
+                label: l10n.themeDark,
                 selected: selected == ThemeMode.dark,
                 onTap: () =>
                     ref.read(themeModeProvider.notifier).set(ThemeMode.dark),
               ),
               _ThemeOption(
-                label: 'Light',
+                label: l10n.themeLight,
                 selected: selected == ThemeMode.light,
                 onTap: () =>
                     ref.read(themeModeProvider.notifier).set(ThemeMode.light),
               ),
               _ThemeOption(
-                label: 'System',
+                label: l10n.themeSystem,
                 selected: selected == ThemeMode.system,
                 onTap: () =>
                     ref.read(themeModeProvider.notifier).set(ThemeMode.system),
@@ -61,7 +60,7 @@ class ThemeScreen extends ConsumerWidget {
             right: 0,
             child: DetailAppBar(
               topInset: padding.top,
-              title: l10n.settingsTheme,
+              title: l10n.themeScreenTitle,
               titleOpacity: 1.0,
               borderOpacity: 0,
               onClose: () => Navigator.of(context).pop(),

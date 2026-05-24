@@ -36,9 +36,9 @@
   "@transportAdd": {
     "description": "A11y label for the center transport button (add new scene)."
   },
-  "transportPlay": "Play scenes",
-  "@transportPlay": {
-    "description": "A11y label for the right transport button (rewind/play back past scenes)."
+  "transportRecap": "Rewind",
+  "@transportRecap": {
+    "description": "A11y label for the right transport button (opens rewind screen across all scenes)."
   },
   "addSceneCardLabel": "add new scene",
   "@addSceneCardLabel": {
@@ -84,7 +84,11 @@
   "@sceneDetailEdit": {
     "description": "Action label to edit a scene in the detail action sheet."
   },
-  "sceneDetailDelete": "Delete",
+  "actionDelete": "Delete",
+  "actionRemove": "Remove",
+  "reactionPickerUpdate": "Update",
+  "reactionPickerCommentHint": "Leave a comment (optional)",
+  "reactionPickerHdUpsellSubtitle": "Add a comment to your reaction.",
   "@sceneDetailDelete": {
     "description": "Action label to delete a scene in the detail action sheet."
   },
@@ -118,10 +122,25 @@
   },
   "settingsTheme": "Theme",
   "settingsPushNotifications": "Notifications",
+  "settingsLanguage": "Language",
+  "languageScreenTitle": "Language",
+  "languageEnglish": "English",
+  "languageKorean": "한국어",
+  "languageSystem": "Use device language",
+  "@languageSystem": {
+    "description": "Option to follow the device's locale."
+  },
+  "themeScreenTitle": "Theme",
+  "themeDark": "Dark",
+  "themeLight": "Light",
+  "themeSystem": "Use device theme",
+  "@themeSystem": {
+    "description": "Option to follow the device's appearance setting."
+  },
   "settingsPrivacyPolicy": "Privacy policy",
   "settingsTermsOfService": "Terms of service",
   "settingsInstagram": "Scenes on Instagram",
-  "settingsLogout": "Log out",
+  "settingsLogout": "Sign Out",
   "settingsDisconnect": "Disconnect",
   "@settingsDisconnect": {
     "description": "Action label to disconnect from partner."
@@ -135,16 +154,16 @@
   "@dangerZoneTitle": {
     "description": "App bar title for the danger zone screen."
   },
-  "dangerZoneSubtitle": "Actions in this area can't be undone.",
-  "@dangerZoneSubtitle": {
-    "description": "Subtitle/description shown at the top of the danger zone screen."
-  },
   "uploadChipPhotosProgress": "Uploading {current} of {total}",
   "@uploadChipPhotosProgress": {
     "description": "Progress label shown in the floating upload chip while photos are uploading.",
     "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "uploadChipFilmActive": "Adding film…",
@@ -154,7 +173,9 @@
   "@uploadChipPhotosDone": {
     "description": "Done label shown briefly after photos finish uploading.",
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "uploadChipFilmDone": "Film added",
@@ -166,6 +187,203 @@
   "@profileDeletedUserName": {
     "description": "Label shown in place of the actual name for a soft-deleted profile (abandoned couple)."
   },
+  "actionSave": "Save",
+  "imageCropperTitle": "Crop",
+  "editProfileNameHint": "Name",
+  "editProfileSaveFailed": "Save failed.",
+  "createSceneTitleHint": "Scene title",
+  "createSceneCreate": "Create",
+  "createSceneSaveFailed": "Failed to save scene.",
+  "datePickerConfirm": "Confirm",
+  "mediaLabelPhoto": "Photo",
+  "mediaLabelFilm": "Film",
+  "mediaLabelMusic": "Music",
+  "mediaLabelPlace": "Place",
+  "recapEmptyPhotos": "No photos to rewind yet.",
+  "recapEmptyFilms": "No films to rewind yet.",
+  "recapEmptyMusic": "No songs to rewind yet.",
+  "recapEmptyPlaces": "No places to rewind yet.",
+  "recapFilteredEmptyPhotos": "No photos in selected scenes.",
+  "recapFilteredEmptyFilms": "No films in selected scenes.",
+  "recapFilteredEmptyMusic": "No songs in selected scenes.",
+  "recapFilteredEmptyPlaces": "No places in selected scenes.",
+  "reactionSaveFailed": "Failed to save reaction.",
+  "reactionRemoveFailed": "Failed to remove reaction.",
+  "recapNavPrevious": "Previous",
+  "recapNavNext": "Next",
+  "recapNavPreviousPlace": "Previous place",
+  "recapNavNextPlace": "Next place",
+  "recapTicketReleased": "Released",
+  "recapTicketRuntime": "Runtime",
+  "recapTicketWatched": "Watched",
+  "runtimeMinutesValue": "{minutes}min",
+  "@runtimeMinutesValue": {
+    "description": "Movie runtime — short form, no space (film ticket card).",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "120"
+      }
+    }
+  },
+  "runtimeMinutesValueSpaced": "{minutes} min",
+  "@runtimeMinutesValueSpaced": {
+    "description": "Movie runtime — with space (content detail overlay).",
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "120"
+      }
+    }
+  },
+  "contentDetailFilmMovie": "Movie",
+  "contentDetailFilmTvSeries": "TV Series",
+  "contentDetailMusicTrack": "Track",
+  "contentDetailMusicAlbum": "Album",
+  "contentDetailUpdateDateFailed": "Failed to update date.",
+  "contentDetailDeleteMessage": "It will be removed from this scene.",
+  "contentDetailDeleteFailed": "Failed to delete.",
+  "actionApply": "Apply",
+  "uploadCancelDialogMessage": "Photos already uploaded will stay.",
+  "uploadCancelKeepUploading": "Keep uploading",
+  "filterScenesAll": "All scenes",
+  "playSceneAction": "Play",
+  "playSceneStop": "Stop",
+  "playSceneNoMomentsToast": "No moments to play.",
+  "playSceneLoadingPreparing": "Preparing the scene…",
+  "playSceneFilterNormal": "Normal",
+  "playSceneFilterVintage": "Vintage",
+  "playSceneFilterCinema": "Cinema",
+  "playSceneFilterMono": "Mono",
+  "playSceneSelectMoments": "Select Moments",
+  "playSceneMomentsCount": "{count} moments",
+  "@playSceneMomentsCount": {
+    "description": "Count of Moments shown under the Select Moments row in the Playback sheet.",
+    "placeholders": {
+      "count": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "playSceneShuffle": "Shuffle",
+  "playSceneHdUpsellSubtitle": "Apply film looks to your playback.",
+  "playSceneShareFailedToast": "Share failed.",
+  "playScenePhotoPermissionToast": "Photo permission required.",
+  "playSceneSavedToPhotosToast": "Saved to Photos",
+  "playSceneInstagramMissingToast": "Instagram is not installed.",
+  "playSceneShareStory": "Story",
+  "playSceneShareMore": "More",
+  "photoPickerScreenTitle": "Add Photos",
+  "photoPickerEmpty": "No photos found",
+  "photoPickerAllPhotos": "All Photos",
+  "photoPickerBatchCapToast": "Up to {limit} photos per upload.",
+  "@photoPickerBatchCapToast": {
+    "description": "Toast when the user hits the per-upload batch cap.",
+    "placeholders": {
+      "limit": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "photoPickerSceneCapToast": "Scene's upload limit reached.",
+  "pickerSearchFailed": "Search failed. Please try again.",
+  "pickerNoResults": "No results found.",
+  "filmPickerScreenTitle": "Add Film",
+  "filmPickerSearchHint": "Search films…",
+  "filmPickerEmpty": "Search for a film to add.",
+  "filmPickerTmdbAttribution": "Movie data provided by TMDB",
+  "musicPickerScreenTitle": "Add Music",
+  "musicPickerSearchHint": "Search music…",
+  "musicPickerEmpty": "Search for music to add.",
+  "musicPickerSpotifyAttribution": "Music data provided by Spotify",
+  "placePickerScreenTitle": "Add Place",
+  "placePickerSearchHint": "Search places…",
+  "placePickerEmpty": "Search for a place to add.",
+  "placePickerAppleAttribution": "Search by Apple Maps",
+  "onboardingGetStarted": "Get Started",
+  "onboardingContinueWithApple": "Continue with Apple",
+  "onboardingContinueWithGoogle": "Continue with Google",
+  "onboardingContinueWithKakao": "Continue with Kakao",
+  "onboardingAgreementContinue": "Continue",
+  "authErrorNetwork": "Check your connection and try again.",
+  "authErrorGeneric": "Sign in failed. Please try again.",
+  "actionContinue": "Continue",
+  "sceneDetailDeleteMessage": "All moments in this scene will also be removed.",
+  "sceneDetailDeleteFailedToast": "Failed to delete scene.",
+  "sceneDetailReorderSaveFailedToast": "Failed to save order.",
+  "profileSetupTagline": "Add a photo and your name\nso your person can recognize you.",
+  "profileSetupNameHint": "Your name (max {max})",
+  "@profileSetupNameHint": {
+    "placeholders": {
+      "max": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "profileSetupSaveFailedToast": "Failed to save profile.",
+  "pairingTagline": "Share your invite code or\nenter your person's code to pair.",
+  "pairingYourInviteCode": "Your invite code",
+  "pairingEnterPersonCodeButton": "Enter person's code",
+  "pairingActionCopy": "Copy",
+  "pairingActionShare": "Share",
+  "pairingEnterCodeHint": "Your person's code",
+  "pairingEnterCodeAction": "Pair",
+  "pairingCodeCopiedToast": "Code copied",
+  "pairingShareMessage": "Join me on Scenes! Use my invite code: {code}",
+  "@pairingShareMessage": {
+    "placeholders": {
+      "code": {
+        "type": "String",
+        "example": "ABCDEF"
+      }
+    }
+  },
+  "pairingFailedToast": "Failed to pair. Please try again.",
+  "pairingErrorInvalidCode": "Invalid code.",
+  "pairingErrorAlreadyUsed": "This code has already been used.",
+  "pairingErrorExpired": "This code has expired.",
+  "pairingErrorOwnCode": "You can't use your own code.",
+  "pairingErrorInviterUnavailable": "This code is no longer available.",
+  "pairingErrorAlreadyPaired": "You're already paired with someone.",
+  "pairingCodeLoadError": "Could not load code. Tap to retry.",
+  "pairingCodeExpiredBadge": "Expired",
+  "pairingCodeExpiresHours": "Expires in {hours}h {minutes}m",
+  "@pairingCodeExpiresHours": {
+    "placeholders": {
+      "hours": {
+        "type": "int",
+        "example": "5"
+      },
+      "minutes": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "pairingCodeExpiresMinutes": "Expires in {minutes}m",
+  "@pairingCodeExpiresMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int",
+        "example": "12"
+      }
+    }
+  },
+  "pairingCodeExpiresSeconds": "Expires in {seconds}s",
+  "@pairingCodeExpiresSeconds": {
+    "placeholders": {
+      "seconds": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "pairingSignOutConfirmMessage": "You will need to sign in again to use Scenes.",
+  "subscriptionUnavailableError": "Subscription is not available right now.",
+  "subscriptionGenericError": "Purchase failed. Please try again.",
   "sceneDetailPlay": "Play scene",
   "@sceneDetailPlay": {
     "description": "A11y label for the play action button in the scene detail."
@@ -178,10 +396,18 @@
   "@profileNarrative": {
     "description": "Narrative sentence displayed on the profile screen.",
     "placeholders": {
-      "partnerA": { "type": "String" },
-      "partnerB": { "type": "String" },
-      "date": { "type": "String" },
-      "count": { "type": "int" }
+      "partnerA": {
+        "type": "String"
+      },
+      "partnerB": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
     }
   },
   "coupleScenesCount": "{count} Scenes",
@@ -198,7 +424,10 @@
   "@notiPromptTitleWithName": {
     "description": "Headline of the post-pairing notification permission prompt screen, including the partner's display name.",
     "placeholders": {
-      "name": { "type": "String", "example": "Soobin" }
+      "name": {
+        "type": "String",
+        "example": "Soobin"
+      }
     }
   },
   "notiPromptTitleNoName": "Don't miss\na single update",
@@ -209,7 +438,10 @@
   "@notiPromptBodyWithName": {
     "description": "Body copy of the notification permission prompt, with partner name.",
     "placeholders": {
-      "name": { "type": "String", "example": "Soobin" }
+      "name": {
+        "type": "String",
+        "example": "Soobin"
+      }
     }
   },
   "notiPromptBodyNoName": "Get notified when your person adds scenes,\nmoments, or reacts to yours.",
@@ -228,8 +460,35 @@
   "@addMediaCapacityLabel": {
     "description": "Caption under the AddMediaSheet showing how many moments are in the current scene out of the tier's limit.",
     "placeholders": {
-      "count": { "type": "int", "example": "12" },
-      "limit": { "type": "int", "example": "30" }
+      "count": {
+        "type": "int",
+        "example": "12"
+      },
+      "limit": {
+        "type": "int",
+        "example": "30"
+      }
+    }
+  },
+  "addMediaDateToday": "Today",
+  "addMediaToastSceneFull": "Scene is full ({limit}).",
+  "@addMediaToastSceneFull": {
+    "description": "Toast shown when the current scene already has the HD-tier maximum number of moments.",
+    "placeholders": {
+      "limit": {
+        "type": "int",
+        "example": "100"
+      }
+    }
+  },
+  "addMediaToastFreeLimit": "Free scenes hold up to {limit} moments. Upgrade for more.",
+  "@addMediaToastFreeLimit": {
+    "description": "Toast shown when a free-tier scene has reached its moment limit.",
+    "placeholders": {
+      "limit": {
+        "type": "int",
+        "example": "30"
+      }
     }
   },
   "hdBannerBenefitMedia": "Unlock films, music, and places.",
@@ -239,5 +498,137 @@
   "hdBannerBenefitMoments": "Up to 100 moments in every scene.",
   "@hdBannerBenefitMoments": {
     "description": "Scenes HD banner subtitle — variant about higher per-scene moment cap."
-  }
+  },
+  "subscriptionTagline": "Make our scenes more vivid",
+  "subscriptionBannerTaglineActive": "Making our scenes more vivid.",
+  "subscriptionBannerLearnMore": "Learn more",
+  "subscriptionFeaturePairTitle": "One for two",
+  "subscriptionFeaturePairDesc": "When just one of you subscribes, Scenes HD unlocks for both.",
+  "subscriptionFeatureMomentTypesTitle": "More Moment Types",
+  "subscriptionFeatureMomentTypesDesc": "Add films, music, and places to your scenes.",
+  "subscriptionFeatureMomentsPerSceneTitle": "More Moments per Scene",
+  "subscriptionFeatureMomentsPerSceneDesc": "Capture up to 100 moments in every scene, instead of 30.",
+  "subscriptionFeatureReactionCommentsTitle": "Reaction Comments",
+  "subscriptionFeatureReactionCommentsDesc": "Leave a personal note alongside any reaction.",
+  "subscriptionFeatureReorderTitle": "Reorder Scenes & Moments",
+  "subscriptionFeatureReorderDesc": "Arrange scenes and moments in any order you like.",
+  "subscriptionFeatureFiltersTitle": "Playback Filters",
+  "subscriptionFeatureFiltersDesc": "Choose from a range of film looks for your playback.",
+  "subscriptionFeatureTemplatesTitle": "More Share Templates",
+  "subscriptionFeatureTemplatesDesc": "Share your scenes with a growing collection of video templates.",
+  "subscriptionFooterPair": "Only one of you needs to subscribe — Scenes HD applies to both of you.",
+  "subscriptionFooterPlan": "Scenes HD is a monthly auto-renewing subscription at {price}/month, with a 7-day free trial for new subscribers.",
+  "@subscriptionFooterPlan": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "subscriptionFooterTrialConversion": "Your 7-day free trial automatically converts to a paid monthly subscription at {price} when the trial ends. To avoid being charged, cancel at least 24 hours before your trial ends.",
+  "@subscriptionFooterTrialConversion": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "subscriptionFooterTrialEligibility": "The free trial is available to new subscribers only. If you have previously subscribed with this Apple ID (including through Family Sharing), you may not be eligible for another free trial.",
+  "subscriptionFooterCharge": "Payment will be charged to your Apple ID account at confirmation of purchase.",
+  "subscriptionFooterRenewal": "Your subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period at {price}/month.",
+  "@subscriptionFooterRenewal": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "subscriptionFooterManage": "You can manage or cancel your subscription in your App Store account settings after purchase. Any unused portion of a free trial will be forfeited when you start a paid subscription.",
+  "subscriptionCtaSubscribe": "Subscribe for {price}/mo",
+  "@subscriptionCtaSubscribe": {
+    "placeholders": {
+      "price": { "type": "String" }
+    }
+  },
+  "subscriptionCtaManage": "Manage Subscription",
+  "subscriptionCtaThanks": "Thanks to {name}",
+  "@subscriptionCtaThanks": {
+    "description": "Subscription CTA label when subscribed by partner.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "subscriptionFreeBadge": "Free for 7 days",
+  "subscriptionLinkPrivacy": "Privacy Policy",
+  "subscriptionLinkRestore": "Restore",
+  "subscriptionLinkTerms": "Terms of Service",
+  "subscriptionToastWelcome": "Welcome to Scenes HD.",
+  "subscriptionToastRestored": "Subscription restored.",
+  "subscriptionToastNothingToRestore": "No purchases to restore.",
+  "notificationsBannerTitle": "Turn on notifications",
+  "notificationsBannerBodyWithName": "Enable in Settings to receive {name}'s activity and updates.",
+  "@notificationsBannerBodyWithName": {
+    "description": "Banner body when partner display name is available.",
+    "placeholders": {
+      "name": {
+        "type": "String",
+        "example": "Alex"
+      }
+    }
+  },
+  "notificationsBannerBodyNoName": "Enable in Settings to receive your partner's activity and updates.",
+  "notificationsLoadError": "Could not load preferences.",
+  "notificationsPartnerActivityLabel": "Partner activity",
+  "notificationsPartnerActivityDesc": "When your partner adds scenes, moments, or likes yours.",
+  "notificationsAppNewsLabel": "App news",
+  "notificationsAppNewsDesc": "Updates about new features and announcements.",
+  "signOutConfirmTitle": "Sign Out?",
+  "signOutConfirmMessage": "You will need to sign in again to use Scenes.",
+  "signOutConfirmAction": "Sign Out",
+  "disconnectConfirmTitle": "Disconnect?",
+  "disconnectConfirmMessage": "You and your person will be unpaired.",
+  "disconnectConfirmAction": "Disconnect",
+  "disconnectFailedToast": "Failed to disconnect.",
+  "deleteAccountConfirmTitle": "Delete account?",
+  "deleteAccountConfirmMessage": "This cannot be undone.",
+  "deleteAccountConfirmAction": "Delete",
+  "deleteAccountFailedToast": "Failed to delete account.",
+  "deleteAccountActiveSubTitle": "Active subscription",
+  "deleteAccountActiveSubMessage": "Cancel your subscription in System Settings to stop being charged. Deleting your account here does not cancel it.",
+  "deleteAccountActiveSubConfirm": "Delete anyway",
+  "deleteAccountActiveSubCancel": "Manage subscription",
+  "commonCancel": "Cancel",
+  "settingsAppVersion": "Version",
+  "creditMoreButton": "More",
+  "@creditMoreButton": {
+    "description": "프로필 Credits 섹션의 더보기 버튼 라벨."
+  },
+  "settingsAppLock": "App Lock",
+  "@settingsAppLock": {
+    "description": "설정 화면의 앱 잠금 항목 라벨."
+  },
+  "lockTitleSetup": "Set Up Lock",
+  "lockTitleChange": "Change PIN",
+  "lockTitleVerify": "Confirm PIN",
+  "lockEnterCurrent": "Enter your current PIN",
+  "lockEnterCurrentDesc": "We'll verify it before continuing.",
+  "lockEnterNew": "Enter a new 4-digit PIN",
+  "lockEnterNewDesc": "You'll use this to unlock the app.",
+  "lockConfirmNew": "Confirm your new PIN",
+  "lockConfirmNewDesc": "Re-enter the same PIN.",
+  "lockSettingsHeader": "App Lock",
+  "lockSettingsEnabledDesc": "App Lock is on.",
+  "lockSettingsDisabledDesc": "Require a PIN to open the app.",
+  "lockSetUpButton": "Set Up PIN",
+  "lockChangePinButton": "Change PIN",
+  "lockDisableButton": "Turn Off App Lock",
+  "lockBiometricToggle": "Unlock with Face ID / Touch ID",
+  "lockBiometricUnavailable": "Biometric authentication is not available on this device.",
+  "lockRecoveryNotice": "If you forget your PIN, sign in again to reset App Lock.",
+  "lockChallengeTitle": "Enter PIN",
+  "lockBiometricPrompt": "Unlock Scenes",
+  "lockForgotPin": "Forgot PIN?",
+  "lockForgotConfirmTitle": "Sign Out?",
+  "lockForgotConfirmBody": "Signing out will turn off App Lock. After signing in again, you'll need to set it up from Settings.",
+  "lockForgotConfirmAction": "Sign Out",
+  "lockDisableConfirmTitle": "Turn Off App Lock?",
+  "lockDisableConfirmBody": "PIN and biometric settings will be cleared.",
+  "lockDisableConfirmAction": "Turn Off"
 }

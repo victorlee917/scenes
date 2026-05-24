@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 /// 상세 프로필(이름, 닉네임 등)은 Couple Detail 화면 모델에서 다룬다.
 @immutable
 class Couple {
-  Couple({
+  const Couple({
     required this.name,
     required this.partnerAName,
     required this.partnerBName,
@@ -50,5 +50,31 @@ class Couple {
         partnerBImageUrl: partnerBImageUrl ?? this.partnerBImageUrl,
         pairedAt: pairedAt ?? this.pairedAt,
         sinceDate: sinceDate ?? this.sinceDate,
+      );
+
+  // 값 동일성 — copyWith로 매번 새 인스턴스가 만들어져도 필드가 같으면
+  // 같은 것으로 취급. ref.watch(...select((s) => s.couple))가 불필요한
+  // rebuild를 건너뛰게 한다.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is Couple &&
+          name == other.name &&
+          partnerAName == other.partnerAName &&
+          partnerBName == other.partnerBName &&
+          partnerAImageUrl == other.partnerAImageUrl &&
+          partnerBImageUrl == other.partnerBImageUrl &&
+          pairedAt == other.pairedAt &&
+          sinceDate == other.sinceDate;
+
+  @override
+  int get hashCode => Object.hash(
+        name,
+        partnerAName,
+        partnerBName,
+        partnerAImageUrl,
+        partnerBImageUrl,
+        pairedAt,
+        sinceDate,
       );
 }

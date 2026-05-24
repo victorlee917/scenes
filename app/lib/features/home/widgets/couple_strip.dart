@@ -84,6 +84,11 @@ class _Avatar extends StatelessWidget {
         border: Border.all(color: context.colors.background, width: 2),
       ),
       child: ClipOval(
+        // url 자체가 비어있으면 영구 이니셜 fallback. URL이 있으면 frameBuilder
+        // 없이 그냥 Image.network — 로딩 중엔 Container의 배경색이 그대로 보이고
+        // 디코드 완료되면 사진이 painted. 이렇게 두면 캐시 미스 시 "이니셜 →
+        // 사진"으로 하드 swap되는 깜빡임이 사라짐. gaplessPlayback은 같은 widget
+        // 인스턴스가 살아있는 동안 직전 frame을 유지.
         child: url.isEmpty
             ? fallback
             : Image.network(
@@ -91,11 +96,8 @@ class _Avatar extends StatelessWidget {
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
+                gaplessPlayback: true,
                 errorBuilder: (_, _, _) => fallback,
-                frameBuilder: (context, child, frame, wasSync) {
-                  if (wasSync || frame != null) return child;
-                  return fallback;
-                },
               ),
       ),
     );

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/notification_preferences_repository.dart';
@@ -11,13 +12,16 @@ import 'data/notification_preferences_repository.dart';
 /// FCM 토큰 등록·갱신 서비스.
 ///
 /// 흐름:
-///   1. 로그인 직후 `bootstrap()` 호출 — 이미 OS 권한이 authorized면 token만
-///      등록. 권한 요청은 onboarding의 noti-prompt 화면에서 별도로.
-///   2. noti-prompt 화면이 `requestPermissionFromOnboarding()` 호출 시 OS 다이
-///      얼로그 → 결과에 따라 row init + token 등록.
+///   1. 로그인 직후 / 앱 resume 시 [ensureRegistered] 호출 — 권한 OK이고
+///      토큰 미등록이면 등록 시도. 성공 후엔 noop.
+///   2. noti-prompt 화면이 [requestPermissionFromOnboarding] 호출 시 OS
+///      다이얼로그 → 결과에 따라 즉시 등록.
 ///   3. token rotation은 onTokenRefresh로 자동 갱신.
 ///
-/// 에러는 user-flow 막지 않도록 모두 swallow + debugPrint.
+/// **재시도 메커니즘**: 첫 launch 시 iOS APNs 연결이 백그라운드로 establish되
+/// 느라 `getAPNSToken()`이 잠시 null인 케이스가 있어. polling으로 5초 대기 +
+/// 그래도 null이면 [ensureRegistered]를 그대로 두고 다음 호출(앱 resume)에서
+/// 재시도. 영구 락(_bootstrapped) 패턴은 폐기.
 class PushService {
   PushService(this._supabase, this._prefsRepo);
 
@@ -25,30 +29,41 @@ class PushService {
   final NotificationPreferencesRepository _prefsRepo;
 
   StreamSubscription<String>? _refreshSub;
-  bool _bootstrapped = false;
+  // 한 번 토큰을 저장 성공한 뒤로는 더 안 시도. 같은 토큰을 매 resume마다
+  // upsert하지 않아도 됨 (onTokenRefresh가 변경 감지).
+  bool _tokenSaved = false;
+  // 동시 호출 race 방지.
+  Future<void>? _inflight;
 
-  /// 로그인 상태일 때 호출. OS 권한이 이미 authorized이면 token 등록까지 진행.
-  /// notDetermined/denied면 token 등록만 skip하고 noti-prompt 화면이 권한
-  /// 요청을 owner. 한 번만 실행, 이후 호출은 noop.
-  Future<void> bootstrap() async {
-    if (_bootstrapped) return;
-    _bootstrapped = true;
-    final fcm = FirebaseMessaging.instance;
+  /// 권한 OK + 토큰 미등록일 때 등록 시도. 실패해도 락 안 걸림 → 다음 resume
+  /// 등에서 재시도 가능.
+  Future<void> ensureRegistered() async {
+    await _log('ensureRegistered_start',
+        status: _tokenSaved ? 'skip_token_saved' : null);
+    if (_tokenSaved) return;
+    final pending = _inflight;
+    if (pending != null) return pending;
 
-    try {
-      final settings = await fcm.getNotificationSettings();
-      final authorized =
-          settings.authorizationStatus == AuthorizationStatus.authorized ||
-              settings.authorizationStatus == AuthorizationStatus.provisional;
-      if (!authorized) {
-        // 권한 미허용 상태에서는 token 등록 skip — APNs token 자체도 안 떨어
-        // 짐. 사용자가 noti-prompt에서 Allow 누르면 그때 또는 시스템 설정에서
-        // 켜고 돌아왔을 때 다시 호출되는 경로로 처리.
-        return;
+    final task = () async {
+      final fcm = FirebaseMessaging.instance;
+      try {
+        final settings = await fcm.getNotificationSettings();
+        final auth = settings.authorizationStatus;
+        await _log('perm_check', status: auth.toString());
+        final authorized = auth == AuthorizationStatus.authorized ||
+            auth == AuthorizationStatus.provisional;
+        if (!authorized) return;
+        await _registerTokenAndPrefs(fcm);
+      } catch (e) {
+        await _log('ensureRegistered_error', detail: e.toString());
+        debugPrint('PushService ensureRegistered failed: $e');
       }
-      await _registerTokenAndPrefs(fcm);
-    } catch (e) {
-      debugPrint('PushService bootstrap failed: $e');
+    }();
+    _inflight = task;
+    try {
+      await task;
+    } finally {
+      _inflight = null;
     }
   }
 
@@ -74,50 +89,120 @@ class PushService {
   }
 
   Future<void> _registerTokenAndPrefs(FirebaseMessaging fcm) async {
-    // 처음 동의 사용자는 모든 카테고리 default-on. row 이미 있으면 노op.
     try {
       await _prefsRepo.initializeIfMissing(allOn: true);
     } catch (e) {
+      await _log('prefs_init_error', detail: e.toString());
       debugPrint('PushService prefs init failed: $e');
     }
 
-    // iOS는 APNs token attach된 뒤에야 FCM token 발급 — 시뮬레이터엔 APNs
-    // 미지원이라 null 나올 수 있고 정상.
     if (Platform.isIOS) {
-      await fcm.getAPNSToken();
+      // iOS: APNs token attach 후에야 FCM token 발급 가능. 첫 launch 시 즉시
+      // 호출하면 null이 떨어지는 케이스가 흔해서 최대 5초 폴링.
+      await _log('apns_poll_start');
+      String? apns;
+      for (var i = 0; i < 10; i++) {
+        try {
+          apns = await fcm.getAPNSToken();
+        } catch (e) {
+          await _log('apns_throw', detail: e.toString());
+          apns = null;
+        }
+        if (apns != null) break;
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      }
+      if (apns == null) {
+        // AppDelegate가 등록 실패 시 UserDefaults에 native 에러를 적어둠.
+        // shared_preferences가 iOS에서 'flutter.' prefix를 붙이므로 같은 키.
+        String? nativeErr;
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          nativeErr = prefs.getString('lastAPNSRegisterError');
+        } catch (_) {}
+        await _log('apns_null',
+            status: 'abort', detail: nativeErr ?? 'no native error captured');
+        debugPrint(
+          'PushService: APNs token still null after 5s — abort, will retry on next resume',
+        );
+        return;
+      }
+      await _log('apns_ok',
+          detail: apns.length > 16 ? apns.substring(0, 16) : apns);
     }
-    final token = await fcm.getToken();
-    if (token != null) {
-      await _saveToken(token);
+
+    String? token;
+    try {
+      token = await fcm.getToken();
+    } catch (e) {
+      await _log('fcm_token_error', detail: e.toString());
+      debugPrint('PushService getToken failed: $e');
     }
+    if (token == null || token.isEmpty) {
+      await _log('fcm_token_null', status: 'abort');
+      debugPrint(
+        'PushService: FCM getToken returned null — will retry on next resume',
+      );
+      return;
+    }
+    await _log('fcm_token_ok',
+        detail: token.length > 16 ? token.substring(0, 16) : token);
+    await _saveToken(token);
+    _tokenSaved = true;
+
     _refreshSub?.cancel();
-    _refreshSub = fcm.onTokenRefresh.listen(_saveToken);
+    _refreshSub = fcm.onTokenRefresh.listen((newToken) async {
+      // ignore: discarded_futures
+      _saveToken(newToken);
+    });
   }
 
   Future<void> _saveToken(String token) async {
     final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) return;
+    if (userId == null) {
+      await _log('save_skip', status: 'no_auth_user');
+      return;
+    }
     final platform = Platform.isIOS ? 'ios' : 'android';
     try {
-      // token이 unique라 다른 user에 등록돼있던 경우(디바이스 양도 등) user_id
-      // 갱신이 필요. onConflict: 'token'으로 upsert.
-      await _supabase.from('device_tokens').upsert(
-        {
-          'user_id': userId,
-          'token': token,
-          'platform': platform,
-          'last_seen_at': DateTime.now().toUtc().toIso8601String(),
+      // 직접 upsert 대신 register_device_token RPC를 호출 — token이 다른
+      // user에 등록돼 있던 경우 RLS UPDATE 정책(USING auth.uid() = old.user_id)
+      // 에 막혀 거부되는 race를 우회한다 (RPC는 SECURITY DEFINER로 다른 user
+      // 소유 row를 먼저 delete 후 insert/upsert).
+      await _supabase.rpc(
+        'register_device_token',
+        params: {
+          'p_token': token,
+          'p_platform': platform,
         },
-        onConflict: 'token',
       );
+      await _log('save_ok');
     } catch (e) {
+      await _log('save_error', detail: e.toString());
       debugPrint('PushService save token failed: $e');
     }
   }
 
-  /// 로그아웃 직전 호출 — 이 디바이스의 토큰 행 삭제. 안 하면 새 사용자가
-  /// 같은 디바이스에 로그인할 때 onConflict로 자동 갱신되긴 하지만, 명시적
-  /// 정리가 깔끔.
+  /// 임시 진단 로거. push_debug_log 테이블에 단계별 상태 기록.
+  /// 진단 끝나면 호출 모두 + 테이블 모두 제거.
+  Future<void> _log(String step, {String? status, String? detail}) async {
+    // 진단용 계측 — release 빌드에선 push_debug_log 쓰기를 건너뛴다.
+    if (!kDebugMode) return;
+    try {
+      final row = <String, dynamic>{
+        'user_id': _supabase.auth.currentUser?.id,
+        'step': step,
+      };
+      if (status != null) row['status'] = status;
+      if (detail != null) row['detail'] = detail;
+      // ignore: use_null_aware_elements
+      await _supabase.from('push_debug_log').insert(row);
+    } catch (_) {
+      // 진단용이라 실패해도 무시.
+    }
+  }
+
+  /// 로그아웃 직전 호출 — 이 디바이스의 토큰 행 삭제 + 다음 로그인 때 재등록
+  /// 가능하도록 _tokenSaved 리셋.
   Future<void> clearForCurrentDevice() async {
     try {
       final token = await FirebaseMessaging.instance.getToken();
@@ -125,6 +210,8 @@ class PushService {
       await _supabase.from('device_tokens').delete().eq('token', token);
     } catch (e) {
       debugPrint('PushService clear failed: $e');
+    } finally {
+      _tokenSaved = false;
     }
   }
 

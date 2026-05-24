@@ -14,13 +14,17 @@ import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/floating_action_sheet.dart';
 import '../../content/contents_view_model.dart';
 import '../../content/models/content.dart';
+import '../../content/models/reaction.dart';
+import '../../content/reactions_view_model.dart';
 import '../../content/widgets/progressive_photo.dart';
+import '../../content/widgets/reaction_bar.dart';
 import '../../content/widgets/source_badge.dart';
+import '../../couple/couple_view_model.dart';
 import '../../profile/profile_view_model.dart';
 import '../../scene/scenes_view_model.dart';
+import '../../subscription/subscription_screen.dart';
 import '../../subscription/subscription_view_model.dart';
 import 'add_media_sheet.dart';
-// import 'content_detail_sheet.dart' show ContentViewer;
 import 'content_viewer_v2.dart';
 import 'create_scene_sheet.dart';
 import 'play_scene_screen.dart';
@@ -45,6 +49,7 @@ class SceneDetailScreen extends ConsumerStatefulWidget {
     super.key,
     required this.scene,
     required this.canisterSize,
+    this.initialContentId,
   });
 
   final Scene scene;
@@ -54,8 +59,12 @@ class SceneDetailScreen extends ConsumerStatefulWidget {
   /// 위치의 크기를 원활히 보간하도록 한다.
   final double canisterSize;
 
-  static String canisterHeroTag(String sceneId) =>
-      'scene-canister-$sceneId';
+  /// 화면 진입 즉시 anchor할 콘텐츠 id. 푸시 알림 탭으로 진입한 경우 등에서
+  /// 사용. contents가 로드되면 해당 id의 인덱스로 [ContentViewerV2]를
+  /// 자동으로 연다. 한 번만 발화 — 사용자가 viewer를 닫으면 다시 안 열림.
+  final String? initialContentId;
+
+  static String canisterHeroTag(String sceneId) => 'scene-canister-$sceneId';
   static String infoHeroTag(String sceneId) => 'scene-info-$sceneId';
 
   /// 홈에서 detail로 push하는 라우트. 페이지 자체는 전환 애니메이션을 쓰지
@@ -65,13 +74,18 @@ class SceneDetailScreen extends ConsumerStatefulWidget {
   static Route<void> route({
     required Scene scene,
     required double canisterSize,
+    String? initialContentId,
   }) {
     return PageRouteBuilder<void>(
       opaque: true,
       transitionDuration: const Duration(milliseconds: 480),
       reverseTransitionDuration: const Duration(milliseconds: 480),
       pageBuilder: (context, animation, secondaryAnimation) {
-        return SceneDetailScreen(scene: scene, canisterSize: canisterSize);
+        return SceneDetailScreen(
+          scene: scene,
+          canisterSize: canisterSize,
+          initialContentId: initialContentId,
+        );
       },
       // 페이지 자체에 FadeTransition을 입힘 — Hero 비행이 끝나기 전에 detail
       // 화면이 갑자기 unmount되며 home이 튀어나오는 현상 방지. 점진 fade로
@@ -86,6 +100,7 @@ class SceneDetailScreen extends ConsumerStatefulWidget {
   static Route<void> fadeRoute({
     required Scene scene,
     required double canisterSize,
+    String? initialContentId,
   }) {
     return PageRouteBuilder<void>(
       opaque: true,
@@ -94,7 +109,11 @@ class SceneDetailScreen extends ConsumerStatefulWidget {
       pageBuilder: (context, animation, secondaryAnimation) {
         return HeroMode(
           enabled: false,
-          child: SceneDetailScreen(scene: scene, canisterSize: canisterSize),
+          child: SceneDetailScreen(
+            scene: scene,
+            canisterSize: canisterSize,
+            initialContentId: initialContentId,
+          ),
         );
       },
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
@@ -117,10 +136,29 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
   double _titleFadeStart = 0;
   double _titleFadeEnd = 1;
 
+  // Edit Order 모드 — 활성화 시 마손리 그리드 대신 ReorderableList. cancel
+  // 또는 save로 빠져나옴. _editableContents는 드래그 동안 mutable로 들고
+  // 있다가 save 시 ViewModel.reorder(...)로 commit.
+  bool _isReordering = false;
+  List<Content> _editableContents = const [];
+
+  // initialContentId로 들어왔을 때 viewer를 한 번만 자동으로 열도록 가드.
+  bool _initialAnchorOpened = false;
+
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // 푸시 딥링크로 진입한 경우(initialContentId 존재) — keepAlive된 family
+    // 캐시가 stale일 수 있으므로 명시적으로 refetch 강제. invalidate는 race
+    // 가능성 있어 notifier.refresh()로 state=loading 후 재fetch.
+    if (widget.initialContentId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // ignore: discarded_futures
+        ref.read(contentsForSceneProvider(widget.scene.id).notifier).refresh();
+      });
+    }
   }
 
   @override
@@ -156,14 +194,16 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
     _titleFadeStart = math.max(0.0, infoApproxTop - appBarBottom - 20);
     _titleFadeEnd = _titleFadeStart + 48;
 
-    final routeAnim = ModalRoute.of(context)?.animation ??
+    final routeAnim =
+        ModalRoute.of(context)?.animation ??
         const AlwaysStoppedAnimation<double>(1);
 
     // scenesProvider에서 최신 scene을 watch — Edit으로 title/cover 바뀌면
     // 시트 닫힌 직후 자동 반영. 리스트에서 사라졌으면(=삭제) widget.scene을
     // 최후의 fallback으로 써서 pop 애니메이션 도중 깨지지 않게 함.
     final scenesAsync = ref.watch(scenesProvider);
-    final scene = scenesAsync.valueOrNull?.firstWhere(
+    final scene =
+        scenesAsync.valueOrNull?.firstWhere(
           (s) => s.id == widget.scene.id,
           orElse: () => widget.scene,
         ) ??
@@ -183,109 +223,140 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
             child: CustomScrollView(
               controller: _scrollController,
               physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: Column(
-                  children: [
-                    SizedBox(height: canisterTop),
-                    Hero(
-                      tag: SceneDetailScreen.canisterHeroTag(scene.id),
-                      transitionOnUserGestures: true,
-                      // 비행 중 source/destination 트리가 rebuild되어도 영향
-                      // 안 받도록 fresh SceneCard만 그림.
-                      flightShuttleBuilder: (_, _, _, _, _) => Material(
-                        type: MaterialType.transparency,
-                        child: SceneCard(scene: scene),
-                      ),
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: GestureDetector(
-                          onTap: _openEditSheet,
-                          behavior: HitTestBehavior.opaque,
-                          child: SizedBox(
-                            width: widget.canisterSize,
-                            height: widget.canisterSize,
+              slivers: [
+                // reorder 모드에선 헤더(캐니스터·메타·+/Play row) 전체를 숨기고
+                // 리스트만 보이도록 — 헤더 sliver를 빼고 앱바 아래 spacer만 둠.
+                if (_isReordering)
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: padding.top + 48 + 12),
+                  )
+                else
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        SizedBox(height: canisterTop),
+                        Hero(
+                          tag: SceneDetailScreen.canisterHeroTag(scene.id),
+                          transitionOnUserGestures: true,
+                          // 비행 중 source/destination 트리가 rebuild되어도 영향
+                          // 안 받도록 fresh SceneCard만 그림.
+                          flightShuttleBuilder: (_, _, _, _, _) => Material(
+                            type: MaterialType.transparency,
                             child: SceneCard(scene: scene),
                           ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    Hero(
-                      tag: SceneDetailScreen.infoHeroTag(scene.id),
-                      transitionOnUserGestures: true,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: GestureDetector(
-                          onTap: _openEditSheet,
-                          behavior: HitTestBehavior.opaque,
-                          child: FocusedSceneInfo(scene: scene),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 36),
-                    FadeTransition(
-                      opacity: routeAnim,
-                      child: _DetailActionRow(
-                        showPlay: scene.media.total > 0,
-                        onShare: () {},
-                        onAddMedia: () {
-                          AddMediaSheet.show(
-                            context: context,
-                            scene: scene,
-                            showSceneHeader: false,
-                          );
-                        },
-                        onPlay: () {
-                          // 구독자는 매체 필터를 고를 수 있도록 시트를
-                          // 띄우되 scene 선택은 잠금. 비구독자는 매체 필터
-                          // 자체가 노출 안 되니 시트 띄울 필요 없이 곧장 재생.
-                          final isSubscribed =
-                              ref.read(isSubscribedProvider);
-                          if (isSubscribed) {
-                            PlaySceneSheet.show(
-                              context: context,
-                              defaultSceneId: scene.id,
-                              lockedSceneIds: {scene.id},
-                            );
-                          } else {
-                            Navigator.of(context).push(
-                              PlaySceneScreen.route(
-                                scenes: [scene],
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: GestureDetector(
+                              onTap: _openEditSheet,
+                              behavior: HitTestBehavior.opaque,
+                              child: SizedBox(
+                                width: widget.canisterSize,
+                                height: widget.canisterSize,
+                                child: SceneCard(scene: scene),
                               ),
-                            );
-                          }
-                        },
-                      ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 40),
+                        Hero(
+                          tag: SceneDetailScreen.infoHeroTag(scene.id),
+                          transitionOnUserGestures: true,
+                          child: Material(
+                            type: MaterialType.transparency,
+                            child: GestureDetector(
+                              onTap: _openEditSheet,
+                              behavior: HitTestBehavior.opaque,
+                              child: FocusedSceneInfo(scene: scene),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 36),
+                        FadeTransition(
+                          opacity: routeAnim,
+                          child: _DetailActionRow(
+                            showPlay: scene.media.total > 0,
+                            onShare: () {},
+                            onAddMedia: () {
+                              AddMediaSheet.show(
+                                context: context,
+                                scene: scene,
+                                showSceneHeader: false,
+                              );
+                            },
+                            onPlay: () {
+                              // 구독자는 매체 필터를 고를 수 있도록 시트를
+                              // 띄우되 scene 선택은 잠금. 비구독자는 매체 필터
+                              // 자체가 노출 안 되니 시트 띄울 필요 없이 곧장 재생.
+                              final isSubscribed = ref.read(
+                                isSubscribedProvider,
+                              );
+                              if (isSubscribed) {
+                                PlaySceneSheet.show(
+                                  context: context,
+                                  scene: scene,
+                                );
+                              } else {
+                                Navigator.of(
+                                  context,
+                                ).push(PlaySceneScreen.route(scene: scene));
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 28),
+                      ],
                     ),
-                    const SizedBox(height: 28),
-                  ],
+                  ),
+                // 미디어 그리드는 route 애니메이션에 맞춰 fade-in.
+                SliverFadeTransition(
+                  opacity: routeAnim,
+                  sliver: _buildMediaSliver(scene),
                 ),
-              ),
-              // 미디어 그리드는 route 애니메이션에 맞춰 fade-in.
-              SliverFadeTransition(
-                opacity: routeAnim,
-                sliver: _buildMediaSliver(scene),
-              ),
-              const SliverToBoxAdapter(child: SizedBox(height: 140)),
-            ],
+                const SliverToBoxAdapter(child: SizedBox(height: 140)),
+              ],
+            ),
           ),
-          ),
-          // 앱바. route 애니메이션으로 fade-in.
+          // 앱바. route 애니메이션으로 fade-in. reorder 모드에선 close가
+          // cancel, trailing이 Save로 swap.
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: FadeTransition(
               opacity: routeAnim,
-              child: DetailAppBar(
-                topInset: padding.top,
-                title: scene.title,
-                titleOpacity: _appBarTitleOpacity,
-                borderOpacity: _borderOpacity,
-                onClose: () => Navigator.of(context).pop(),
-                onMoreActions: _handleMoreActions,
-              ),
+              child: _isReordering
+                  ? DetailAppBar(
+                      topInset: padding.top,
+                      title: AppLocalizations.of(context).sceneListEditOrder,
+                      titleOpacity: 1.0,
+                      borderOpacity: _borderOpacity,
+                      onClose: _cancelReorder,
+                      trailing: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _saveReorder,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
+                          child: Text(
+                            AppLocalizations.of(context).sceneListSave,
+                            style: AppTypography.body(
+                              15,
+                              weight: FontWeight.w600,
+                            ).copyWith(color: context.colors.foreground),
+                          ),
+                        ),
+                      ),
+                    )
+                  : DetailAppBar(
+                      topInset: padding.top,
+                      title: scene.title,
+                      titleOpacity: _appBarTitleOpacity,
+                      borderOpacity: _borderOpacity,
+                      onClose: () => Navigator.of(context).pop(),
+                      onMoreActions: _handleMoreActions,
+                    ),
             ),
           ),
         ],
@@ -297,9 +368,7 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
     // 두 provider 동시 갱신 — scenes로 카드/카운트, contents로 그리드.
     await Future.wait<void>([
       ref.read(scenesProvider.notifier).softRefresh(),
-      ref
-          .read(contentsForSceneProvider(widget.scene.id).notifier)
-          .refresh(),
+      ref.read(contentsForSceneProvider(widget.scene.id).notifier).refresh(),
     ]);
   }
 
@@ -307,61 +376,129 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
   /// Edit 항목 모두 이 시트를 띄움. provider에서 latest를 다시 읽어 stale
   /// prefill 방지.
   void _openEditSheet() {
-    final latest = ref.read(scenesProvider).valueOrNull?.firstWhere(
+    final latest =
+        ref
+            .read(scenesProvider)
+            .valueOrNull
+            ?.firstWhere(
               (s) => s.id == widget.scene.id,
               orElse: () => widget.scene,
             ) ??
         widget.scene;
-    CreateSceneSheet.show(
-      context: context,
-      editScene: latest,
-    );
+    CreateSceneSheet.show(context: context, editScene: latest);
   }
 
   void _handleMoreActions() {
     final l10n = AppLocalizations.of(context);
-    final latest = ref.read(scenesProvider).valueOrNull?.firstWhere(
-              (s) => s.id == widget.scene.id,
-              orElse: () => widget.scene,
-            ) ??
-        widget.scene;
-    // scenes는 공동 편집(edit)은 가능하지만 삭제는 owner만. 본인 id가
-    // scene.created_by와 같을 때만 delete 항목 노출.
-    final myId = ref.read(myProfileProvider).valueOrNull?.id;
-    final canDelete = myId != null && myId == latest.createdBy;
+    // scenes/contents 모두 active 페어 멤버면 edit·delete 다 가능. 작성자만
+    // 가능하던 옛 정책(created_by = auth.uid())은 RLS 레벨에서 풀렸음.
+    const canDelete = true;
     FloatingActionSheet.show(
       context: context,
       items: [
+        FloatingActionItem(label: l10n.sceneDetailEdit, onTap: _openEditSheet),
+        // Edit Order — 콘텐츠 순서 재배열. HD only. 무료 회원은 HD 뱃지 노출
+        // 후 탭 시 SubscriptionScreen으로 유도.
         FloatingActionItem(
-          label: l10n.sceneDetailEdit,
-          onTap: _openEditSheet,
+          label: l10n.sceneListEditOrder,
+          badge: ref.read(isSubscribedProvider) ? null : 'HD',
+          onTap: _handleEditOrder,
         ),
         if (canDelete)
           FloatingActionItem(
-            label: l10n.sceneDetailDelete,
+            label: l10n.actionDelete,
             isDestructive: true,
             onTap: () async {
               final confirmed = await ConfirmDialog.show(
                 context: context,
                 title: 'Delete this scene?',
-                message:
-                    'All moments in this scene will also be removed.',
-                confirmLabel: 'Delete',
+                message: l10n.sceneDetailDeleteMessage,
+                confirmLabel: l10n.actionDelete,
                 isDestructive: true,
               );
               if (!confirmed || !mounted) return;
               try {
-                await ref
-                    .read(scenesProvider.notifier)
-                    .delete(widget.scene.id);
+                await ref.read(scenesProvider.notifier).delete(widget.scene.id);
                 if (mounted) Navigator.of(context).pop();
               } catch (_) {
-                if (mounted) AppToast.show(context, 'Failed to delete scene.');
+                if (mounted) {
+                  AppToast.show(context, l10n.sceneDetailDeleteFailedToast);
+                }
               }
             },
           ),
       ],
     );
+  }
+
+  /// Edit Order 진입. 무료 회원은 SubscriptionScreen 푸시.
+  /// 더보기 메뉴의 "Edit Order" 항목 콜백. HD면 reorder, 무료면 구독 화면.
+  /// 단 sub 상태 RPC가 아직 미응답(loading)이면 일단 무시 — false fallback으로
+  /// HD user를 잘못 무료로 판단해 구독 화면으로 보내는 race 방지.
+  void _handleEditOrder() {
+    final subAsync = ref.read(subscriptionViewModelProvider);
+    if (subAsync.isLoading || !subAsync.hasValue) return;
+    final isHd = subAsync.valueOrNull?.isSubscribed ?? false;
+    if (!isHd) {
+      Navigator.of(context).push(SubscriptionScreen.route());
+      return;
+    }
+    _enterReorderMode();
+  }
+
+  /// 콘텐츠 셀 long-press 콜백. HD만 reorder 진입 — 무료(또는 loading)는 무
+  /// 반응. 메뉴와 달리 SubscriptionScreen 자동 유도하지 않음(scene_list와
+  /// 일관).
+  void _handleLongPressReorder() {
+    if (!ref.read(isSubscribedProvider)) return;
+    _enterReorderMode();
+  }
+
+  /// HD 회원이 reorder mode 진입. _editableContents에 현재 순서 스냅샷.
+  void _enterReorderMode() {
+    final current =
+        ref.read(contentsForSceneProvider(widget.scene.id)).valueOrNull ??
+        const <Content>[];
+    if (current.isEmpty) return;
+    setState(() {
+      _isReordering = true;
+      _editableContents = List.of(current);
+    });
+  }
+
+  void _cancelReorder() {
+    setState(() {
+      _isReordering = false;
+      _editableContents = const [];
+    });
+  }
+
+  Future<void> _saveReorder() async {
+    final committed = List<Content>.of(_editableContents);
+    setState(() {
+      _isReordering = false;
+      _editableContents = const [];
+    });
+    try {
+      await ref
+          .read(contentsForSceneProvider(widget.scene.id).notifier)
+          .reorder(committed);
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(
+          context,
+          AppLocalizations.of(context).sceneDetailReorderSaveFailedToast,
+        );
+      }
+    }
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final item = _editableContents.removeAt(oldIndex);
+      _editableContents.insert(newIndex, item);
+    });
   }
 
   Widget _buildMediaSliver(Scene scene) {
@@ -395,26 +532,54 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
           child: Text(
             'Failed to load contents.',
             textAlign: TextAlign.center,
-            style: AppTypography.body(14).copyWith(
-              color: context.colors.foregroundMuted,
-            ),
+            style: AppTypography.body(
+              14,
+            ).copyWith(color: context.colors.foregroundMuted),
           ),
         ),
       ),
       data: (contents) {
+        // 푸시 딥링크로 진입한 경우 — 일치하는 content_id를 찾으면 다음 frame
+        // 에서 viewer 자동으로 open. 한 번만 발화.
+        _maybeOpenInitialAnchor(scene, contents);
         if (contents.isEmpty) {
           return SliverToBoxAdapter(
             child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
               child: Text(
                 l10n.sceneDetailEmptyMedia,
                 textAlign: TextAlign.center,
-                style: AppTypography.body(14).copyWith(
-                  color: context.colors.foregroundMuted,
-                  height: 1.5,
-                ),
+                style: AppTypography.body(
+                  14,
+                ).copyWith(color: context.colors.foregroundMuted, height: 1.5),
               ),
+            ),
+          );
+        }
+        if (_isReordering) {
+          // 마손리(가변 height) → 단일 column ReorderableList로 전환. 각
+          // 콘텐츠는 정사각 thumbnail + drag handle. scene_list reorder와
+          // 동일 패턴.
+          return SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            sliver: SliverReorderableList(
+              itemCount: _editableContents.length,
+              onReorder: _onReorder,
+              proxyDecorator: (child, index, animation) => Material(
+                color: Colors.transparent,
+                elevation: 0,
+                child: child,
+              ),
+              itemBuilder: (context, index) {
+                final content = _editableContents[index];
+                // 타일 어디든 누르고 드래그하면 reorder — 우측 grip 아이콘
+                // 영역에 한정되지 않음. grip은 시각 힌트로만 유지.
+                return ReorderableDragStartListener(
+                  key: ValueKey(content.id),
+                  index: index,
+                  child: _ReorderTile(content: content),
+                );
+              },
             ),
           );
         }
@@ -430,6 +595,7 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
               return _ContentTile(
                 content: content,
                 onTap: () => _openContentViewer(scene, contents, index),
+                onLongPress: _handleLongPressReorder,
               );
             },
           ),
@@ -484,20 +650,41 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
       sceneName: scene.title,
     );
   }
+
+  /// initialContentId로 진입한 경우 contents가 도착하는 첫 frame에 viewer를
+  /// 자동으로 open. build 도중 직접 push하면 안 되므로 postFrameCallback에
+  /// 예약. 이미 한 번 열었으면 재진입 시에도 다시 안 열림.
+  void _maybeOpenInitialAnchor(Scene scene, List<Content> contents) {
+    final anchorId = widget.initialContentId;
+    if (anchorId == null || _initialAnchorOpened) return;
+    final idx = contents.indexWhere((c) => c.id == anchorId);
+    if (idx < 0) return;
+    _initialAnchorOpened = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _openContentViewer(scene, contents, idx);
+    });
+  }
 }
 
 /// masonry grid의 한 칸. photo는 실 이미지, 그 외 type은 임시 placeholder
 /// (다음 단계에서 type별 카드로 교체).
 class _ContentTile extends StatelessWidget {
-  const _ContentTile({required this.content, required this.onTap});
+  const _ContentTile({
+    required this.content,
+    required this.onTap,
+    this.onLongPress,
+  });
 
   final Content content;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
+      onLongPress: onLongPress,
       child: ClipRRect(
         borderRadius: AppRadii.mdBorder,
         child: switch (content.type) {
@@ -517,9 +704,20 @@ class _ContentTile extends StatelessWidget {
     final aspect = (w != null && h != null && w > 0 && h > 0) ? w / h : 0.75;
     return AspectRatio(
       aspectRatio: aspect,
-      child: ProgressivePhoto(
-        thumbUrl: content.thumbSignedUrl,
-        fullUrl: content.fullSignedUrl,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ProgressivePhoto(
+            thumbUrl: content.thumbSignedUrl,
+            fullUrl: content.fullSignedUrl,
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _GridReactionBadge(content: content),
+          ),
+        ],
       ),
     );
   }
@@ -537,10 +735,12 @@ class _ContentTile extends StatelessWidget {
             thumbUrl: content.thumbSignedUrl,
             fullUrl: content.fullSignedUrl,
           ),
-          const Positioned(
-            top: 6,
-            right: 6,
-            child: TmdbBadge(),
+          const Positioned(top: 6, right: 6, child: TmdbBadge()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _GridReactionBadge(content: content),
           ),
         ],
       ),
@@ -559,10 +759,12 @@ class _ContentTile extends StatelessWidget {
             thumbUrl: content.thumbSignedUrl,
             fullUrl: content.fullSignedUrl,
           ),
-          const Positioned(
-            top: 6,
-            right: 6,
-            child: SpotifyBadge(),
+          const Positioned(top: 6, right: 6, child: SpotifyBadge()),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _GridReactionBadge(content: content),
           ),
         ],
       ),
@@ -585,11 +787,7 @@ class _ContentTile extends StatelessWidget {
             thumbUrl: content.thumbSignedUrl,
             fullUrl: content.fullSignedUrl,
           ),
-          const Positioned(
-            top: 6,
-            right: 6,
-            child: MapboxBadge(),
-          ),
+          const Positioned(top: 6, right: 6, child: MapboxBadge()),
           if (name != null && name.isNotEmpty)
             Positioned(
               left: 0,
@@ -611,11 +809,19 @@ class _ContentTile extends StatelessWidget {
                   name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: AppTypography.body(11, weight: FontWeight.w600)
-                      .copyWith(color: Colors.white, height: 1.2),
+                  style: AppTypography.body(
+                    11,
+                    weight: FontWeight.w600,
+                  ).copyWith(color: Colors.white, height: 1.2),
                 ),
               ),
             ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: _GridReactionBadge(content: content),
+          ),
         ],
       ),
     );
@@ -635,12 +841,180 @@ class _ContentTile extends StatelessWidget {
         alignment: Alignment.center,
         child: Text(
           content.type,
-          style: AppTypography.body(11).copyWith(
-            color: context.colors.foregroundMuted,
-          ),
+          style: AppTypography.body(
+            11,
+          ).copyWith(color: context.colors.foregroundMuted),
         ),
       ),
     );
+  }
+}
+
+/// 그리드 셀의 우측 하단에 표시되는 리액션 뱃지. 본인·파트너 중 리액션
+/// 남긴 사람의 아바타 + 이모지 뱃지를 ContentViewerV2의 ReactionBar와 같은
+/// 톤으로 보여준다. 리액션이 하나도 없으면 빈 위젯을 반환해 Positioned
+/// 안에서 0×0으로 안 보이게.
+class _GridReactionBadge extends ConsumerWidget {
+  const _GridReactionBadge({required this.content});
+
+  final Content content;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reactions =
+        ref
+            .watch(reactionsForSceneProvider(content.sceneId))
+            .valueOrNull?[content.id] ??
+        const <Reaction>[];
+    if (reactions.isEmpty) return const SizedBox.shrink();
+
+    final myProfile = ref.watch(myProfileProvider).valueOrNull;
+    final partner = ref.watch(activeCoupleProvider).valueOrNull?.partner;
+
+    Reaction? mine;
+    Reaction? theirs;
+    for (final r in reactions) {
+      if (myProfile != null && r.userId == myProfile.id) {
+        mine = r;
+      } else if (partner != null && r.userId == partner.id) {
+        theirs = r;
+      }
+    }
+
+    final children = <Widget>[];
+    // 파트너 먼저(좌), 본인 우 — ReactionBar와 동일 순서.
+    if (theirs != null && partner != null) {
+      children.add(
+        ReactionAvatarBadge(
+          avatarUrl: partner.displayAvatarUrl,
+          fallbackName: partner.displayName,
+          emoji: theirs.emoji,
+          avatarSize: 22,
+          badgeSize: 13,
+          emojiSize: 7,
+          // emojiSize=7용 calibrate. 폰트 메트릭 shift가 비례 아니라 직접
+          // 시각 보정. 위치 안 맞으면 여기서 미세 조정.
+          emojiOffset: const Offset(0.45, -0.8),
+        ),
+      );
+    }
+    if (mine != null && myProfile != null) {
+      if (children.isNotEmpty) children.add(const SizedBox(width: 4));
+      children.add(
+        ReactionAvatarBadge(
+          avatarUrl: myProfile.displayAvatarUrl,
+          fallbackName: myProfile.displayName,
+          emoji: mine.emoji,
+          avatarSize: 22,
+          badgeSize: 13,
+          emojiSize: 7,
+          // emojiSize=7용 calibrate. 폰트 메트릭 shift가 비례 아니라 직접
+          // 시각 보정. 위치 안 맞으면 여기서 미세 조정.
+          emojiOffset: const Offset(0.45, -0.8),
+        ),
+      );
+    }
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    // 이미지가 밝거나 디테일이 많을 때 뱃지가 묻히지 않도록 하단에 은은한
+    // 다크 그라데이션을 깔고 그 위에 우측 정렬로 뱃지를 둔다.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.35)],
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+/// Reorder 모드용 단일 행 타일 — square thumbnail + drag handle. scene list
+/// reorder와 시각 일관 (단일 column, 우측 핸들).
+class _ReorderTile extends StatelessWidget {
+  const _ReorderTile({required this.content});
+
+  final Content content;
+
+  static const double _thumbSize = 56;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: context.colors.clickableArea,
+          borderRadius: AppRadii.lgBorder,
+          border: Border.all(
+            color: context.colors.foreground.withValues(alpha: 0.06),
+            width: 0.5,
+          ),
+        ),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: AppRadii.smBorder,
+              child: SizedBox(
+                width: _thumbSize,
+                height: _thumbSize,
+                child: ProgressivePhoto(
+                  thumbUrl: content.thumbSignedUrl,
+                  fullUrl: content.fullSignedUrl,
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                _typeLabel(content.type),
+                style: AppTypography.body(
+                  14,
+                  weight: FontWeight.w500,
+                ).copyWith(color: context.colors.foreground),
+              ),
+            ),
+            // 시각 힌트만 — 실제 드래그 트리거는 부모 ReorderableDragStart
+            // Listener가 타일 전체에 걸려 있음.
+            SizedBox(
+              width: 32,
+              height: 32,
+              child: Center(
+                child: FaIcon(
+                  FontAwesomeIcons.gripLines,
+                  size: 16,
+                  color: context.colors.foregroundMuted,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _typeLabel(String type) {
+    switch (type) {
+      case 'photo':
+        return 'Photo';
+      case 'film':
+        return 'Film';
+      case 'music':
+        return 'Music';
+      case 'place':
+        return 'Place';
+      default:
+        return type;
+    }
   }
 }
 
@@ -671,9 +1045,7 @@ class _GhostTile extends StatelessWidget {
           baseColor: base,
           highlightColor: highlight,
           period: const Duration(milliseconds: 1800),
-          child: const SizedBox.expand(
-            child: ColoredBox(color: Colors.white),
-          ),
+          child: const SizedBox.expand(child: ColoredBox(color: Colors.white)),
         ),
       ),
     );
@@ -712,8 +1084,11 @@ class _DetailActionRow extends StatelessWidget {
           size: buttonSize,
           onTap: onAddMedia,
           semanticLabel: l10n.sceneDetailAddMedia,
-          child: FaIcon(FontAwesomeIcons.plus,
-              size: iconSize, color: iconColor),
+          child: FaIcon(
+            FontAwesomeIcons.plus,
+            size: iconSize,
+            color: iconColor,
+          ),
         ),
         if (showPlay) ...[
           SizedBox(width: gap),
@@ -721,12 +1096,14 @@ class _DetailActionRow extends StatelessWidget {
             size: buttonSize,
             onTap: onPlay,
             semanticLabel: l10n.sceneDetailPlay,
-            child: FaIcon(FontAwesomeIcons.play,
-                size: iconSize, color: iconColor),
+            child: FaIcon(
+              FontAwesomeIcons.play,
+              size: iconSize,
+              color: iconColor,
+            ),
           ),
         ],
       ],
     );
   }
 }
-

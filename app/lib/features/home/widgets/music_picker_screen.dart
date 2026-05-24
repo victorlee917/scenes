@@ -4,22 +4,22 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/theme/app_colors_ext.dart';
-import '../../../core/widgets/app_toast.dart';
-import '../../../core/widgets/fade_text.dart';
-import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/widgets/app_toast.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../upload/upload_queue_view_model.dart';
 import '../models/scene.dart';
 import '../models/spotify_hit.dart';
 import '../music_picker_view_model.dart';
-import 'detail_app_bar.dart';
 import 'scene_detail_screen.dart';
+import 'search_picker_scaffold.dart';
 
 /// 음악 검색·선택 화면.
 ///
-/// 한 번에 하나의 항목(track 또는 album)만 선택 가능. 입력 → 300ms 디바운스
-/// → Spotify 검색. 검색·결과·로딩 상태는 [musicPickerViewModelProvider]가 관리.
-class MusicPickerScreen extends ConsumerStatefulWidget {
+/// 한 번에 하나의 항목(track 또는 album)만 선택 가능. 입력 → 디바운스 →
+/// Spotify 검색. 검색 폼·결과 리스트·선택 상태는 [SearchPickerScaffold]가
+/// 담당하고, 이 위젯은 Spotify 특화 부분만 연결한다.
+class MusicPickerScreen extends ConsumerWidget {
   const MusicPickerScreen({
     super.key,
     this.scene,
@@ -36,87 +36,37 @@ class MusicPickerScreen extends ConsumerStatefulWidget {
     DateTime? momentDate,
     bool landOnSceneDetail = true,
   }) {
-    return PageRouteBuilder<void>(
-      opaque: true,
-      transitionDuration: const Duration(milliseconds: 340),
-      reverseTransitionDuration: const Duration(milliseconds: 280),
-      pageBuilder: (context, animation, secondaryAnimation) =>
-          MusicPickerScreen(
+    return searchPickerRoute(
+      MusicPickerScreen(
         scene: scene,
         momentDate: momentDate,
         landOnSceneDetail: landOnSceneDetail,
       ),
-      transitionsBuilder: (context, animation, secondaryAnimation, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOut,
-          reverseCurve: Curves.easeIn,
-        );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(curved),
-          child: child,
-        );
-      },
     );
   }
 
-  @override
-  ConsumerState<MusicPickerScreen> createState() => _MusicPickerScreenState();
-}
-
-class _MusicPickerScreenState extends ConsumerState<MusicPickerScreen> {
-  final _searchController = TextEditingController();
-  final _focusNode = FocusNode();
-  SpotifyHit? _selected;
-
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _focusNode.dispose();
-    super.dispose();
-  }
-
-  void _onChanged(String value) {
-    ref.read(musicPickerViewModelProvider.notifier).updateQuery(
-          value,
-          locale: _spotifyLocale(context),
-        );
-    setState(() {}); // suffix clear 버튼 노출 갱신
-  }
-
-  /// Spotify language/market 결정. film_picker와 동일하게 디바이스 시스템
-  /// locale을 직접 읽어 MaterialApp.locale 오버라이드 영향 받지 않도록.
+  /// Spotify language/market 결정. 디바이스 시스템 locale을 직접 읽어
+  /// MaterialApp.locale 오버라이드 영향을 받지 않도록.
   String _spotifyLocale(BuildContext context) {
     final lang = View.of(context).platformDispatcher.locale.languageCode;
     return lang == 'ko' ? 'ko' : 'en';
   }
 
-  void _selectMusic(SpotifyHit hit) {
-    setState(() {
-      _selected =
-          (_selected?.id == hit.id && _selected?.kind == hit.kind) ? null : hit;
-    });
-  }
-
   /// 선택된 항목을 큐에 enqueue 후 picker를 즉시 닫고 scene detail로 이동.
   /// 실제 업로드는 background에서 [UploadQueueNotifier]가 처리.
-  void _save() {
-    final hit = _selected;
-    final scene = widget.scene;
-    if (hit == null || scene == null) return;
+  void _save(BuildContext context, WidgetRef ref, SpotifyHit hit) {
+    final scene = this.scene;
+    if (scene == null) return;
 
     ref.read(uploadQueueProvider.notifier).enqueueMusic(
           sceneId: scene.id,
           sceneTitle: scene.title,
           hit: hit,
-          momentDate: widget.momentDate,
+          momentDate: momentDate,
         );
 
     Navigator.of(context).pop();
-    if (widget.landOnSceneDetail) {
+    if (landOnSceneDetail) {
       final viewportWidth = MediaQuery.sizeOf(context).width;
       Navigator.of(context).push(
         SceneDetailScreen.fadeRoute(
@@ -128,217 +78,41 @@ class _MusicPickerScreenState extends ConsumerState<MusicPickerScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final padding = MediaQuery.paddingOf(context);
-    final state = ref.watch(musicPickerViewModelProvider);
-    final hasSelection = _selected != null;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final results =
+        ref.watch(musicPickerViewModelProvider.select((s) => s.results));
+    final isLoading =
+        ref.watch(musicPickerViewModelProvider.select((s) => s.isLoading));
 
     ref.listen(
       musicPickerViewModelProvider.select((s) => s.error),
       (prev, next) {
         if (next != null && next.isNotEmpty) {
-          AppToast.show(context, 'Search failed. Please try again.');
+          AppToast.show(context, l10n.pickerSearchFailed);
         }
       },
     );
 
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              SizedBox(height: padding.top + DetailAppBar.barHeight),
-
-              // 검색 폼
-              Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: context.colors.nonClickableArea,
-                    borderRadius: AppRadii.smBorder,
-                    border: Border.all(
-                      color:
-                          context.colors.foreground.withValues(alpha: 0.06),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _searchController,
-                    focusNode: _focusNode,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    textInputAction: TextInputAction.search,
-                    style: AppTypography.body(15).copyWith(
-                      color: context.colors.foreground,
-                    ),
-                    decoration: InputDecoration(
-                      hintText: 'Search music...',
-                      hintStyle: AppTypography.body(15).copyWith(
-                        color: context.colors.foregroundMuted
-                            .withValues(alpha: 0.5),
-                      ),
-                      prefixIcon: Padding(
-                        padding: const EdgeInsets.only(left: 14, right: 10),
-                        child: FaIcon(
-                          FontAwesomeIcons.magnifyingGlass,
-                          size: 16,
-                          color: context.colors.foregroundMuted,
-                        ),
-                      ),
-                      prefixIconConstraints: const BoxConstraints(
-                        minWidth: 0,
-                        minHeight: 0,
-                      ),
-                      suffixIcon: _searchController.text.isNotEmpty
-                          ? GestureDetector(
-                              onTap: () {
-                                _searchController.clear();
-                                _onChanged('');
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.only(right: 14),
-                                child: Container(
-                                  width: 18,
-                                  height: 18,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: context.colors.foregroundMuted
-                                        .withValues(alpha: 0.3),
-                                  ),
-                                  child: Center(
-                                    child: FaIcon(
-                                      FontAwesomeIcons.xmark,
-                                      size: 9,
-                                      color: context.colors.background,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            )
-                          : null,
-                      suffixIconConstraints: const BoxConstraints(
-                        minWidth: 0,
-                        minHeight: 0,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 14,
-                      ),
-                    ),
-                    onChanged: _onChanged,
-                  ),
-                ),
-              ),
-
-              // 검색 결과
-              Expanded(
-                child: ShaderMask(
-                  shaderCallback: (bounds) => const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.white,
-                      Colors.white,
-                    ],
-                    stops: [0.0, 0.015, 1.0],
-                  ).createShader(bounds),
-                  blendMode: BlendMode.dstIn,
-                  child: _buildResultsBody(state, padding),
-                ),
-              ),
-            ],
-          ),
-
-          // 앱바
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: DetailAppBar(
-              topInset: padding.top,
-              title: 'Add Music',
-              titleOpacity: 1.0,
-              useGradient: false,
-              onClose: () => Navigator.of(context).pop(),
-              trailing: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: hasSelection ? _save : null,
-                child: AnimatedOpacity(
-                  opacity: hasSelection ? 1.0 : 0.4,
-                  duration: const Duration(milliseconds: 200),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 12,
-                    ),
-                    child: Text(
-                      'Save',
-                      style: AppTypography.body(
-                        15,
-                        weight: FontWeight.w600,
-                      ).copyWith(
-                        color: context.colors.foreground,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildResultsBody(MusicPickerState state, EdgeInsets padding) {
-    if (state.isLoading) {
-      return Center(
-        child: CircularProgressIndicator(
-          color: context.colors.foreground,
-          strokeWidth: 1.5,
-        ),
-      );
-    }
-
-    if (state.results.isEmpty) {
-      return Center(
-        child: Text(
-          state.query.trim().isEmpty
-              ? 'Search for music to add.'
-              : 'No results found.',
-          style: AppTypography.body(14).copyWith(
-            color: context.colors.foregroundMuted,
-          ),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      padding: EdgeInsets.only(bottom: padding.bottom + 24),
-      itemCount: state.results.length + 1,
-      itemBuilder: (context, index) {
-        if (index == 0) {
-          return const _SpotifyAttribution();
-        }
-        final hit = state.results[index - 1];
-        final isSelected =
-            _selected?.id == hit.id && _selected?.kind == hit.kind;
-        return _MusicTile(
-          hit: hit,
-          selected: isSelected,
-          onTap: () => _selectMusic(hit),
-        );
-      },
+    return SearchPickerScaffold<SpotifyHit>(
+      title: l10n.musicPickerScreenTitle,
+      searchHint: l10n.musicPickerSearchHint,
+      emptyMessage: l10n.musicPickerEmpty,
+      results: results,
+      isLoading: isLoading,
+      onQueryChanged: (value) => ref
+          .read(musicPickerViewModelProvider.notifier)
+          .updateQuery(value, locale: _spotifyLocale(context)),
+      attribution: const _SpotifyAttribution(),
+      idOf: (hit) => '${hit.kind}:${hit.id}',
+      itemBuilder: (context, hit, selected, onTap) =>
+          _MusicTile(hit: hit, selected: selected, onTap: onTap),
+      onSave: (hit) => _save(context, ref, hit),
     );
   }
 }
 
 /// Spotify TOS상 데이터 노출 화면에 attribution 표시 의무.
-/// MapBox/TMDB와 동일한 패턴.
 class _SpotifyAttribution extends StatelessWidget {
   const _SpotifyAttribution();
 
@@ -352,7 +126,7 @@ class _SpotifyAttribution extends StatelessWidget {
           mode: LaunchMode.externalApplication,
         ),
         child: Text(
-          'Music data provided by Spotify',
+          AppLocalizations.of(context).musicPickerSpotifyAttribution,
           style: AppTypography.body(10).copyWith(
             color: context.colors.foregroundMuted.withValues(alpha: 0.5),
           ),
@@ -362,8 +136,7 @@ class _SpotifyAttribution extends StatelessWidget {
   }
 }
 
-// ── 음악 결과 타일 ───────────────────────────────────────────
-
+/// 음악 결과 타일 — 앨범 커버(56×56) + 제목/아티스트/앨범·연도.
 class _MusicTile extends StatelessWidget {
   const _MusicTile({
     required this.hit,
@@ -381,91 +154,36 @@ class _MusicTile extends StatelessWidget {
     // - track: "${album} · ${year}"
     // - album: "Album · ${year}"
     // year만 없으면 · 구분자 없이 좌측만 표시.
-    final left = hit.isTrack ? (hit.album ?? '') : 'Album';
+    final left = hit.isTrack
+        ? (hit.album ?? '')
+        : AppLocalizations.of(context).contentDetailMusicAlbum;
     final right = hit.year ?? '';
     final thirdLine = right.isEmpty
         ? left
         : (left.isEmpty ? right : '$left · $right');
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        color: selected
-            ? context.colors.foreground.withValues(alpha: 0.04)
-            : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-        child: Row(
-          children: [
-            // 앨범 커버
-            ClipRRect(
-              borderRadius: AppRadii.xsBorder,
-              child: Container(
-                width: 56,
-                height: 56,
-                color: context.colors.nonClickableArea,
-                child: hit.coverUrl != null
-                    ? Image.network(
-                        hit.coverUrl!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Center(
-                          child: FaIcon(
-                            FontAwesomeIcons.music,
-                            size: 18,
-                            color: context.colors.foregroundMuted,
-                          ),
-                        ),
-                      )
-                    : Center(
-                        child: FaIcon(
-                          FontAwesomeIcons.music,
-                          size: 18,
-                          color: context.colors.foregroundMuted,
-                        ),
-                      ),
-              ),
-            ),
-            const SizedBox(width: 14),
-            // 정보
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FadeText(
-                    hit.title,
-                    style: AppTypography.body(15, weight: FontWeight.w500)
-                        .copyWith(color: context.colors.foreground),
-                  ),
-                  const SizedBox(height: 3),
-                  FadeText(
-                    hit.artist,
-                    style: AppTypography.body(13).copyWith(
-                      color: context.colors.foregroundMuted,
-                    ),
-                  ),
-                  if (thirdLine.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    FadeText(
-                      thirdLine,
-                      style: AppTypography.body(12).copyWith(
-                        color: context.colors.foregroundMuted
-                            .withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            if (selected)
-              FaIcon(
-                FontAwesomeIcons.check,
-                size: 16,
-                color: context.colors.foreground,
-              ),
-          ],
-        ),
+    final fallback = Center(
+      child: FaIcon(
+        FontAwesomeIcons.music,
+        size: 18,
+        color: context.colors.foregroundMuted,
       ),
+    );
+    return PickerResultTile(
+      thumbWidth: 56,
+      thumbHeight: 56,
+      thumbnail: hit.coverUrl != null
+          ? Image.network(
+              hit.coverUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => fallback,
+            )
+          : fallback,
+      line1: hit.title,
+      line2: hit.artist,
+      line3: thirdLine.isEmpty ? null : thirdLine,
+      selected: selected,
+      onTap: onTap,
     );
   }
 }

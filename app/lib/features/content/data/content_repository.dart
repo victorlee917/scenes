@@ -6,11 +6,13 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/data/signed_url_cache.dart';
 import '../../../main.dart' show supabaseUrl;
 import '../../home/models/place_hit.dart';
 import '../../home/models/spotify_hit.dart';
 import '../../home/models/tmdb_film.dart';
 import '../models/content.dart';
+import '../models/reaction.dart';
 
 /// `contents` 테이블 read + photo 업로드 전용 Repository.
 ///
@@ -19,9 +21,10 @@ import '../models/content.dart';
 /// insert한다. 클라이언트가 직접 storage에 못 쓰는 publishable-key 이슈
 /// (memory: project_supabase_keys) 우회 + transactional insertion이 목적.
 class ContentRepository {
-  ContentRepository(this._client);
+  ContentRepository(this._client, this._urlCache);
 
   final SupabaseClient _client;
+  final SignedUrlCache _urlCache;
 
   /// 한 scene의 contents 개수만 조회 — pre-flight 한도 체크용. row를 가져오지
   /// 않고 head count만 받아 latency·payload 절약. RLS는 select 정책이라
@@ -75,41 +78,25 @@ class ContentRepository {
   }
 
   /// Place 정적지도는 scene_media에 캐싱(MapBox TOS 허용) — signed URL 발급.
-  /// 옛 row(캐싱 실패)는 storage_path null이라 슬롯도 null.
+  /// 옛 row(캐싱 실패)는 storage_path null이라 슬롯도 null. SignedUrlCache가
+  /// 7d TTL로 URL 재사용 → 같은 URL = Smart CDN cache hit.
   Future<Content> _hydratePlaceUrls(Content content) async {
     final cachedPath =
         content.payload['mapbox_static_storage_path'] as String?;
-    String? url;
-    if (cachedPath != null && cachedPath.isNotEmpty) {
-      try {
-        url = await _client.storage
-            .from('scene_media')
-            .createSignedUrl(cachedPath, 86400);
-      } catch (_) {}
-    }
+    final url = cachedPath == null
+        ? null
+        : await _urlCache.getOrSign(cachedPath);
     return content.copyWith(fullSignedUrl: url, thumbSignedUrl: url);
   }
 
   Future<Content> _hydratePhotoUrls(Content content) async {
     final fullPath = content.storagePath;
     final thumbPath = content.thumbPath;
-    // full/thumb 두 개를 동시에 발행 — 한쪽 실패해도 다른 쪽은 살리려고
-    // 각자 try/catch로 감싸 null fallback. Future.wait는 한쪽 throw하면 전체
-    // throw라 안 쓰고 평이하게 두 await을 병행 시작 후 합류.
-    Future<String?> sign(String? path) async {
-      if (path == null || path.isEmpty) return null;
-      try {
-        return await _client.storage
-            .from('scene_media')
-            .createSignedUrl(path, 86400);
-      } catch (_) {
-        return null;
-      }
-    }
-
+    // full/thumb 두 개를 동시에 발행. 캐시 hit이면 origin 호출 없이 즉시
+    // 반환되고, miss이면 SignedUrlCache가 createSignedUrl 호출 + 영속 저장.
     final results = await Future.wait([
-      sign(fullPath),
-      sign(thumbPath),
+      _urlCache.getOrSign(fullPath ?? ''),
+      _urlCache.getOrSign(thumbPath ?? ''),
     ]);
     return content.copyWith(
       fullSignedUrl: results[0],
@@ -124,15 +111,9 @@ class ContentRepository {
   Future<Content> _hydrateFilmUrls(Content content) async {
     final cachedPath = content.payload['poster_storage_path'] as String?;
     final sourceUrl = content.payload['poster_source_url'] as String?;
-    String? url;
-    if (cachedPath != null && cachedPath.isNotEmpty) {
-      try {
-        url = await _client.storage
-            .from('scene_media')
-            .createSignedUrl(cachedPath, 86400);
-      } catch (_) {}
-    }
-    url ??= sourceUrl;
+    final url = (cachedPath != null && cachedPath.isNotEmpty)
+        ? await _urlCache.getOrSign(cachedPath) ?? sourceUrl
+        : sourceUrl;
     return content.copyWith(
       fullSignedUrl: url,
       thumbSignedUrl: url,
@@ -173,16 +154,16 @@ class ContentRepository {
       http.MultipartFile.fromBytes(
         'full',
         fullBytes,
-        filename: 'full.jpg',
-        contentType: MediaType('image', 'jpeg'),
+        filename: 'full.webp',
+        contentType: MediaType('image', 'webp'),
       ),
     );
     request.files.add(
       http.MultipartFile.fromBytes(
         'thumb',
         thumbBytes,
-        filename: 'thumb.jpg',
-        contentType: MediaType('image', 'jpeg'),
+        filename: 'thumb.webp',
+        contentType: MediaType('image', 'webp'),
       ),
     );
 
@@ -306,27 +287,59 @@ class ContentRepository {
     return base.copyWith(fullSignedUrl: url, thumbSignedUrl: url);
   }
 
-  /// 현재 유저가 좋아요를 누른 contents의 id 집합. content_likes 테이블에서
-  /// (user_id = me, content_id IN (...)) 조회. 빈 입력은 빈 결과 즉시 반환.
-  Future<Set<String>> myLikesForContentIds(Iterable<String> contentIds) async {
-    final myId = _client.auth.currentUser?.id;
-    if (myId == null || contentIds.isEmpty) return const {};
-    final rows = await _client
-        .from('content_likes')
-        .select('content_id')
-        .eq('user_id', myId)
-        .inFilter('content_id', contentIds.toList(growable: false));
-    return (rows as List)
-        .cast<Map<String, dynamic>>()
-        .map((r) => r['content_id'] as String)
-        .toSet();
+  /// content 삭제. RLS가 author + active couple 체크해 row 권한 보장.
+  /// 더불어 storage 객체(full/thumb/poster/map)도 best-effort로 함께 제거 →
+  /// orphan 누적 방지(시간이 갈수록 storage 비용 증가). 다음 흐름:
+  ///   1. 메모리의 [content].payload에서 storage path 추출 (재조회 없음)
+  ///   2. row delete (RLS 통과해야 storage 삭제 의미 있음)
+  ///   3. storage objects 삭제 (실패는 swallow — row는 이미 삭제됐으니 UX는 OK)
+  ///   4. SignedUrlCache invalidate — stale URL을 다른 곳에서 hit하지 않게
+  Future<void> deleteContent(Content content) async {
+    // payload에서 type별 storage path 후보들 추출 — 호출자가 이미 들고 있는
+    // Content를 그대로 쓰므로 삭제 전 별도 SELECT가 필요 없다.
+    final payload = content.payload;
+    final paths = <String>[
+      for (final key in const [
+        'storage_path', // photo full
+        'thumb_path', // photo thumb
+        'poster_storage_path', // film
+        'mapbox_static_storage_path', // place
+      ])
+        if (payload[key] is String && (payload[key] as String).isNotEmpty)
+          payload[key] as String,
+    ];
+
+    await _client.from('contents').delete().eq('id', content.id);
+
+    if (paths.isEmpty) return;
+    try {
+      await _client.storage.from('scene_media').remove(paths);
+    } catch (_) {
+      // best-effort — 실패는 무시. cron prune이 추후 catch하도록 둠.
+    }
+    // 캐시된 signed URL이 다른 화면에서 hit하지 않도록 정리.
+    for (final p in paths) {
+      // ignore: discarded_futures
+      _urlCache.invalidate(p);
+    }
   }
 
-  /// content 삭제. RLS가 author + active couple 체크하므로 클라가 row만
-  /// 지우면 됨. scene_media의 연관 객체(full/thumb/poster/map)는 storage
-  /// orphan으로 남으나 빈도 낮고 추후 cleanup으로 정리.
-  Future<void> deleteContent(String contentId) async {
-    await _client.from('contents').delete().eq('id', contentId);
+  /// scene 안의 contents 순서 재배열. RPC 한 번으로 position 1..N 일괄 업데이트.
+  /// 일반 UPDATE는 created_by = auth.uid() 제약이라 본인이 안 올린 콘텐츠
+  /// position을 못 바꿈 — RPC가 active couple 멤버 권한 체크 후 service
+  /// definer로 일괄 처리.
+  Future<void> reorderContents({
+    required String sceneId,
+    required List<String> orderedIds,
+  }) async {
+    if (orderedIds.isEmpty) return;
+    await _client.rpc(
+      'reorder_scene_contents',
+      params: {
+        'p_scene_id': sceneId,
+        'p_ordered_ids': orderedIds,
+      },
+    );
   }
 
   /// 작성자가 사후에 moment date를 수정. RLS는 created_by = auth.uid() 인 row만
@@ -339,14 +352,59 @@ class ContentRepository {
         .eq('id', contentId);
   }
 
-  /// like 토글. RPC가 한 round-trip으로 INSERT/DELETE 결정하고 `true`(이제
-  /// 좋아요 됨) 또는 `false`(취소됨)를 반환.
-  Future<bool> toggleLike(String contentId) async {
-    final result = await _client.rpc(
-      'toggle_content_like',
-      params: {'p_content_id': contentId},
-    );
-    return result == true;
+  /// scene 안의 모든 contents에 달린 반응(나 + 파트너)을 한 번에 조회.
+  /// `(user_id, content_id)` PK니까 contents id로 in-filter 후 client에서
+  /// content별로 그룹핑해 사용.
+  Future<List<Reaction>> reactionsForContentIds(Iterable<String> ids) async {
+    final list = ids.toList(growable: false);
+    if (list.isEmpty) return const [];
+    final rows = await _client
+        .from('content_reactions')
+        .select()
+        .inFilter('content_id', list);
+    return (rows as List)
+        .cast<Map<String, dynamic>>()
+        .map(Reaction.fromJson)
+        .toList(growable: false);
+  }
+
+  /// 본인 반응 upsert. 같은 (user_id, content_id) row가 있으면 emoji/comment
+  /// 갱신. comment는 HD pair에서만 비어있지 않게 저장 가능 — free pair에서
+  /// comment를 보내면 DB 트리거가 reject (P0001).
+  ///
+  /// 클라가 free일 땐 comment를 null로 보내고, HD일 땐 옵션. 빈 문자열은 트리거
+  /// 가 null로 normalize.
+  Future<Reaction> setReaction({
+    required String contentId,
+    required String emoji,
+    String? comment,
+  }) async {
+    final myId = _client.auth.currentUser?.id;
+    if (myId == null) {
+      throw StateError('Not signed in.');
+    }
+    final inserted = await _client
+        .from('content_reactions')
+        .upsert({
+          'user_id': myId,
+          'content_id': contentId,
+          'emoji': emoji,
+          'comment': comment,
+        }, onConflict: 'user_id,content_id')
+        .select()
+        .single();
+    return Reaction.fromJson(inserted);
+  }
+
+  /// 본인 반응 제거. 없는 row를 삭제해도 무해 (no-op).
+  Future<void> removeReaction(String contentId) async {
+    final myId = _client.auth.currentUser?.id;
+    if (myId == null) return;
+    await _client
+        .from('content_reactions')
+        .delete()
+        .eq('user_id', myId)
+        .eq('content_id', contentId);
   }
 
   /// place content 추가. EF가 MapBox token으로 정적지도 PNG 받아 scene_media에
@@ -396,5 +454,8 @@ class ContentRepository {
 }
 
 final contentRepositoryProvider = Provider<ContentRepository>((ref) {
-  return ContentRepository(Supabase.instance.client);
+  return ContentRepository(
+    Supabase.instance.client,
+    ref.watch(signedUrlCacheProvider),
+  );
 });

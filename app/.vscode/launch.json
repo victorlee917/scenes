@@ -8,7 +8,8 @@
             "toolArgs": [
                 "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
                 "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
-                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f",
+                "--dart-define=REVENUECAT_IOS_API_KEY=appl_WmEjIANyKfMSyijtOEAmSFmXeSV"
             ]
         },
         {
@@ -19,7 +20,8 @@
             "toolArgs": [
                 "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
                 "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
-                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f",
+                "--dart-define=REVENUECAT_IOS_API_KEY=appl_WmEjIANyKfMSyijtOEAmSFmXeSV"
             ]
         },
         {
@@ -30,7 +32,8 @@
             "toolArgs": [
                 "--dart-define=SUPABASE_URL=https://cmnzpmswkaykjjlmxkut.supabase.co",
                 "--dart-define=SUPABASE_ANON_KEY=sb_publishable_QKullI5zS6GGUVKv3LsvyA_Lg6tZmUq",
-                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f"
+                "--dart-define=KAKAO_NATIVE_APP_KEY=49345eb4969f4d9834180b3afa18789f",
+                "--dart-define=REVENUECAT_IOS_API_KEY=appl_WmEjIANyKfMSyijtOEAmSFmXeSV"
             ]
         }
     ]

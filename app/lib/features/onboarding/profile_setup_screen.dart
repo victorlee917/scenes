@@ -10,6 +10,7 @@ import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/widgets/app_toast.dart';
+import '../../l10n/app_localizations.dart';
 import '../profile/profile_view_model.dart';
 
 class ProfileSetupScreen extends ConsumerStatefulWidget {
@@ -51,6 +52,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
 
   Future<void> _pickImage() async {
     if (_picking) return;
+    final cropTitle = AppLocalizations.of(context).imageCropperTitle;
     setState(() => _picking = true);
     try {
       final picked = await _picker.pickImage(
@@ -70,12 +72,12 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           IOSUiSettings(
-            title: 'Crop',
+            title: cropTitle,
             aspectRatioLockEnabled: true,
             resetAspectRatioEnabled: false,
           ),
           AndroidUiSettings(
-            toolbarTitle: 'Crop',
+            toolbarTitle: cropTitle,
             lockAspectRatio: true,
             hideBottomControls: true,
           ),
@@ -100,8 +102,13 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
             avatarFile: _pickedImage,
           );
       // 성공 시 onboarding_completed_at가 채워져 router가 자동 redirect.
-    } catch (e) {
-      if (mounted) AppToast.show(context, 'Failed to save profile.');
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(
+          context,
+          AppLocalizations.of(context).profileSetupSaveFailedToast,
+        );
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -110,6 +117,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final l10n = AppLocalizations.of(context);
 
     // 레이아웃 분리:
     //   - 위: Expanded + SingleChildScrollView 본문 (타이틀/사진/입력란).
@@ -144,7 +152,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Add a photo and your name\nso your person can recognize you.',
+                    l10n.profileSetupTagline,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(15).copyWith(
                       color: context.colors.foregroundMuted,
@@ -241,7 +249,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                               required maxLength}) =>
                           null,
                       decoration: InputDecoration(
-                        hintText: 'Your name (max 12)',
+                        hintText: l10n.profileSetupNameHint(12),
                         hintStyle: AppTypography.body(15).copyWith(
                           color: context.colors.foregroundMuted
                               .withValues(alpha: 0.4),
@@ -291,7 +299,7 @@ class _ProfileSetupScreenState extends ConsumerState<ProfileSetupScreen> {
                               ),
                             )
                           : Text(
-                              'Continue',
+                              l10n.actionContinue,
                               style: AppTypography.body(15,
                                       weight: FontWeight.w600)
                                   .copyWith(

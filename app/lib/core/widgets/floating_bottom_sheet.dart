@@ -1,10 +1,8 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 
-import '../theme/app_colors.dart';
 import '../theme/app_colors_ext.dart';
 import '../theme/app_radii.dart';
+import 'glass_panel.dart';
 
 /// 플로팅 형태의 바텀시트.
 ///
@@ -41,37 +39,25 @@ class FloatingBottomSheet extends StatelessWidget {
         right: 12,
         bottom: bottomPadding,
       ),
-      child: ClipRRect(
+      child: GlassPanel(
         borderRadius: AppRadii.sheetBorder,
-        child: BackdropFilter(
-          filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.colors.clickableArea.withValues(alpha: 0.82),
-              borderRadius: AppRadii.sheetBorder,
-              border: Border.all(
-                color: context.colors.foreground.withValues(alpha: 0.06),
-                width: 0.5,
+        borderAlpha: 0.06,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 10, bottom: 12),
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.foreground.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 12),
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: context.colors.foreground.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                child,
-              ],
-            ),
-          ),
+            child,
+          ],
         ),
       ),
     );

@@ -9,9 +9,11 @@
 //   - scene_id: <UUID>
 //   - payload:  JSON string with width/height/taken_at/lat/lng/exif (any
 //               subset; missing fields just omitted from contents.payload)
-//   - full:     image/jpeg bytes (display variant; size capped per tier
-//               by storage RLS — 5 MiB free pair / 50 MiB HD pair)
-//   - thumb:    image/jpeg bytes (~600px short edge, used in grids/lists)
+//   - full:     image/webp (preferred) or image/jpeg bytes (display variant;
+//               size capped per tier by storage RLS — 5 MiB free pair / 50
+//               MiB HD pair). Storage path extension matches actual format.
+//   - thumb:    image/webp (preferred) or image/jpeg bytes (~600px short edge,
+//               used in grids/lists)
 //
 // Headers:
 //   - Authorization: Bearer <user JWT>
@@ -21,9 +23,9 @@
 //   2. Resolve scene → pair_id via user-scoped client (RLS enforces
 //      caller is a member of an active couple owning the scene).
 //   3. Allocate content_id.
-//   4. Upload both bytes via service-role to:
-//        scene_media/<pair_id>/<scene_id>/<content_id>/full.jpg
-//        scene_media/<pair_id>/<scene_id>/<content_id>/thumb.jpg
+//   4. Upload both bytes via service-role to (extension matches input format):
+//        scene_media/<pair_id>/<scene_id>/<content_id>/full.{webp|jpg}
+//        scene_media/<pair_id>/<scene_id>/<content_id>/thumb.{webp|jpg}
 //   5. Insert contents row (type='photo', payload merged with storage paths,
 //      occurred_at = payload.taken_at if present).
 //   6. Return the inserted row + signed URLs (1h).
@@ -123,14 +125,27 @@ Deno.serve(async (req) => {
     return new Response("Empty file part", { status: 400 });
   }
 
-  // Magic-byte 체크 — JPEG SOI marker (FF D8 FF). 클라가 multipart의 file part
-  // 이름을 'full'/'thumb'로 만들어 보내도 실제 바이트가 다른 포맷이면 거절.
-  // 악의적/실수 업로드(svg+xss, html, etc.) 차단을 위한 server-side 검증.
+  // Magic-byte 체크 — JPEG(FF D8 FF) 또는 WebP(RIFF....WEBP). 클라가
+  // multipart의 file part 이름을 'full'/'thumb'로 만들어 보내도 실제 바이트
+  // 가 다른 포맷이면 거절. 악의적/실수 업로드(svg+xss, html, etc.) 차단을
+  // 위한 server-side 검증. 신규 업로드는 WebP, 옛 클라가 보내는 JPEG도 호환
+  // 유지(점진 전환).
   const isJpeg = (b: Uint8Array) =>
     b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff;
-  if (!isJpeg(fullBytes) || !isJpeg(thumbBytes)) {
-    return new Response("Both file parts must be JPEG", { status: 400 });
+  const isWebp = (b: Uint8Array) =>
+    b.length >= 12 &&
+    b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 && // 'RIFF'
+    b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50; // 'WEBP'
+  const isAllowed = (b: Uint8Array) => isJpeg(b) || isWebp(b);
+  if (!isAllowed(fullBytes) || !isAllowed(thumbBytes)) {
+    return new Response("Both file parts must be JPEG or WebP", { status: 400 });
   }
+  // thumb/full 각자 포맷 독립 검출 — 클라가 thumb은 OS native 썸네일
+  // (JPEG)로, full은 WebP로 보내는 mixed 케이스 지원.
+  const fullExt = isWebp(fullBytes) ? "webp" : "jpg";
+  const fullMime = fullExt === "webp" ? "image/webp" : "image/jpeg";
+  const thumbExt = isWebp(thumbBytes) ? "webp" : "jpg";
+  const thumbMime = thumbExt === "webp" ? "image/webp" : "image/jpeg";
 
   // 3) Allocate content_id (we generate client-side via crypto.randomUUID
   //    so the storage path is known before insert and we don't need a
@@ -156,8 +171,8 @@ Deno.serve(async (req) => {
     serviceKey,
   );
 
-  const fullPath = `${pairId}/${sceneId}/${contentId}/full.jpg`;
-  const thumbPath = `${pairId}/${sceneId}/${contentId}/thumb.jpg`;
+  const fullPath = `${pairId}/${sceneId}/${contentId}/full.${fullExt}`;
+  const thumbPath = `${pairId}/${sceneId}/${contentId}/thumb.${thumbExt}`;
 
   // rollback 헬퍼 — 어떤 단계에서든 이미 만든 객체가 있으면 best-effort로
   // 지움. 실패는 로그만 — 응답이 가는 케이스가 아니라 그냥 깨끗이 정리.
@@ -178,7 +193,7 @@ Deno.serve(async (req) => {
 
   const fullUp = await adminClient.storage
     .from("scene_media")
-    .upload(fullPath, fullBytes, { contentType: "image/jpeg", upsert: true });
+    .upload(fullPath, fullBytes, { contentType: fullMime, upsert: true });
   if (fullUp.error) {
     console.error("full upload failed", fullUp.error);
     return new Response(`Full upload failed: ${fullUp.error.message}`, {
@@ -192,7 +207,7 @@ Deno.serve(async (req) => {
 
   const thumbUp = await adminClient.storage
     .from("scene_media")
-    .upload(thumbPath, thumbBytes, { contentType: "image/jpeg", upsert: true });
+    .upload(thumbPath, thumbBytes, { contentType: thumbMime, upsert: true });
   if (thumbUp.error) {
     await removeStorage([fullPath]);
     console.error("thumb upload failed", thumbUp.error);

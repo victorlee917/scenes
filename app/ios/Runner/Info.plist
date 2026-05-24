@@ -4,6 +4,8 @@
 	<dict>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
@@ -30,6 +32,10 @@
 		<string>We save shared scene photos directly to your photo library.</string>
 		<key>NSCameraUsageDescription</key>
 		<string>We need camera access to take a cover photo for your scene.</string>
+		<key>NSFaceIDUsageDescription</key>
+		<string>Use Face ID to unlock Scenes.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Used by the map view in Rewind to center on places you've saved. The app does not track or share your location.</string>
 		<key>GIDClientID</key>
 		<string>433814039366-b898nr8ssbjn7dghmk9oip5faf5b0uop.apps.googleusercontent.com</string>
 		<key>CFBundleURLTypes</key>

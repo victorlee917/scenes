@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/confirm_dialog.dart';
+import '../../l10n/app_localizations.dart';
 import '../auth/auth_view_model.dart';
 import '../profile/data/profile_repository.dart';
 import '../profile/profile_view_model.dart';
@@ -29,12 +30,13 @@ class AccountDeletion {
     required BuildContext context,
     required WidgetRef ref,
   }) async {
+    final l10n = AppLocalizations.of(context);
     // 1) 첫 confirm — 일반 케이스
     final firstConfirm = await ConfirmDialog.show(
       context: context,
-      title: 'Delete account?',
-      message: 'This cannot be undone.',
-      confirmLabel: 'Delete',
+      title: l10n.deleteAccountConfirmTitle,
+      message: l10n.deleteAccountConfirmMessage,
+      confirmLabel: l10n.deleteAccountConfirmAction,
       isDestructive: true,
     );
     if (!firstConfirm || !context.mounted) return;
@@ -54,25 +56,24 @@ class AccountDeletion {
       await ref.read(authViewModelProvider.notifier).signOut();
     } catch (_) {
       if (!context.mounted) return;
-      AppToast.show(context, 'Failed to delete account.');
+      AppToast.show(context, l10n.deleteAccountFailedToast);
     }
   }
 
   /// 활성 구독 안내 다이얼로그. true 반환 = "Delete anyway" 진행, false =
   /// 취소(또는 Manage subscription으로 이동해 시스템 설정 열림).
   static Future<bool> _showSubscriptionWarning(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     // ConfirmDialog는 두 버튼만 지원해 3-way 분기엔 부족. showModalBottomSheet
     // 또는 showDialog로 직접 그리거나, 단계 나눠서 두 번 띄우는 방법. 여기선
     // 가장 단순한 패턴 — Manage subscription 안내 → 사용자가 "Delete anyway"
     // 누르면 진행, 아니면 시스템 설정 열고 종료.
     final confirmed = await ConfirmDialog.show(
       context: context,
-      title: 'Active subscription',
-      message:
-          'Cancel your subscription in System Settings to stop being charged. '
-          'Deleting your account here does not cancel it.',
-      confirmLabel: 'Delete anyway',
-      cancelLabel: 'Manage subscription',
+      title: l10n.deleteAccountActiveSubTitle,
+      message: l10n.deleteAccountActiveSubMessage,
+      confirmLabel: l10n.deleteAccountActiveSubConfirm,
+      cancelLabel: l10n.deleteAccountActiveSubCancel,
       isDestructive: true,
     );
     if (confirmed) return true;

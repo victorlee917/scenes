@@ -14,6 +14,7 @@ import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../core/widgets/floating_action_sheet.dart';
 import '../../core/widgets/floating_bottom_sheet.dart';
+import '../../l10n/app_localizations.dart';
 import '../auth/auth_view_model.dart';
 import '../couple/couple_view_model.dart';
 import '../couple/data/couple_repository.dart';
@@ -69,13 +70,18 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
   Future<void> _copyCode(String code) async {
     await Clipboard.setData(ClipboardData(text: code));
-    if (mounted) AppToast.show(context, 'Code copied');
+    if (mounted) {
+      AppToast.show(
+        context,
+        AppLocalizations.of(context).pairingCodeCopiedToast,
+      );
+    }
   }
 
   void _shareCode(String code) {
     SharePlus.instance.share(
       ShareParams(
-        text: 'Join me on Scenes! Use my invite code: $code',
+        text: AppLocalizations.of(context).pairingShareMessage(code),
       ),
     );
   }
@@ -83,24 +89,25 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   /// 우상단 더보기 → 로그아웃 또는 탈퇴 옵션. 둘 다 confirm 다이얼로그를 거친
   /// 뒤 실행되며, 성공 시 라우터가 자동으로 onboarding 화면으로 이동.
   void _showMoreActions() {
+    final l10n = AppLocalizations.of(context);
     FloatingActionSheet.show(
       context: context,
       items: [
         FloatingActionItem(
-          label: 'Sign out',
+          label: l10n.settingsLogout,
           onTap: () async {
             final confirmed = await ConfirmDialog.show(
               context: context,
               title: 'Sign out?',
-              message: 'You will need to sign in again to use Scenes.',
-              confirmLabel: 'Sign out',
+              message: l10n.pairingSignOutConfirmMessage,
+              confirmLabel: l10n.settingsLogout,
             );
             if (!confirmed || !mounted) return;
             await ref.read(authViewModelProvider.notifier).signOut();
           },
         ),
         FloatingActionItem(
-          label: 'Delete account',
+          label: l10n.settingsDeleteAccount,
           isDestructive: true,
           onTap: () => AccountDeletion.confirmAndDelete(
             context: context,
@@ -132,10 +139,13 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
       await ref.read(activeCoupleProvider.notifier).refresh();
     } on PostgrestException catch (e) {
       if (!mounted) return;
-      AppToast.show(context, _redeemErrorMessage(e));
-    } catch (e) {
+      AppToast.show(context, _redeemErrorMessage(context, e));
+    } catch (_) {
       if (!mounted) return;
-      AppToast.show(context, 'Failed to pair. Please try again.');
+      AppToast.show(
+        context,
+        AppLocalizations.of(context).pairingFailedToast,
+      );
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -143,34 +153,48 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
 
   /// `redeem_couple_invite` RPC가 던지는 에러 메시지를 사용자용으로 매핑.
   /// P0001 = raise exception, 23505 = single-active 트리거의 unique violation.
-  String _redeemErrorMessage(PostgrestException e) {
+  String _redeemErrorMessage(BuildContext context, PostgrestException e) {
+    final l10n = AppLocalizations.of(context);
     final msg = e.message;
-    if (msg.contains('invalid invite code')) return 'Invalid code.';
-    if (msg.contains('already redeemed')) return 'This code has already been used.';
-    if (msg.contains('expired')) return 'This code has expired.';
-    if (msg.contains('cannot redeem own invite')) return 'You can\'t use your own code.';
-    if (msg.contains('inviter no longer available')) return 'This code is no longer available.';
-    if (e.code == '23505') return 'You\'re already paired with someone.';
-    return 'Failed to pair. Please try again.';
+    if (msg.contains('invalid invite code')) {
+      return l10n.pairingErrorInvalidCode;
+    }
+    if (msg.contains('already redeemed')) {
+      return l10n.pairingErrorAlreadyUsed;
+    }
+    if (msg.contains('expired')) return l10n.pairingErrorExpired;
+    if (msg.contains('cannot redeem own invite')) {
+      return l10n.pairingErrorOwnCode;
+    }
+    if (msg.contains('inviter no longer available')) {
+      return l10n.pairingErrorInviterUnavailable;
+    }
+    if (e.code == '23505') return l10n.pairingErrorAlreadyPaired;
+    return l10n.pairingFailedToast;
   }
 
   /// 만료까지 남은 시간 — 24h형식 H/M로 표시. 만료 후엔 "Expired".
-  String _formatExpiry(CoupleInvite invite) {
+  String _formatExpiry(BuildContext context, CoupleInvite invite) {
+    final l10n = AppLocalizations.of(context);
     final now = DateTime.now();
     final diff = invite.expiresAt.difference(now);
-    if (diff.isNegative) return 'Expired';
+    if (diff.isNegative) return l10n.pairingCodeExpiredBadge;
     if (diff.inHours >= 1) {
-      return 'Expires in ${diff.inHours}h ${diff.inMinutes.remainder(60)}m';
+      return l10n.pairingCodeExpiresHours(
+        diff.inHours,
+        diff.inMinutes.remainder(60),
+      );
     }
     if (diff.inMinutes >= 1) {
-      return 'Expires in ${diff.inMinutes}m';
+      return l10n.pairingCodeExpiresMinutes(diff.inMinutes);
     }
-    return 'Expires in ${diff.inSeconds}s';
+    return l10n.pairingCodeExpiresSeconds(diff.inSeconds);
   }
 
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final l10n = AppLocalizations.of(context);
     final inviteAsync = ref.watch(myInviteProvider);
 
     return Scaffold(
@@ -267,7 +291,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    'Share your invite code or\nenter your person\'s code to pair.',
+                    l10n.pairingTagline,
                     textAlign: TextAlign.center,
                     style: AppTypography.body(15).copyWith(
                       color: context.colors.foregroundMuted,
@@ -281,7 +305,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                   inviteAsync.when(
                     data: (invite) => _InviteCard(
                       code: invite.code,
-                      expiryLabel: _formatExpiry(invite),
+                      expiryLabel: _formatExpiry(context, invite),
                       onCopy: () => _copyCode(invite.code),
                       onShare: () => _shareCode(invite.code),
                     ),
@@ -316,7 +340,7 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
                                   ),
                                 )
                               : Text(
-                                  'Enter person\'s code',
+                                  l10n.pairingEnterPersonCodeButton,
                                   style: AppTypography.body(15,
                                           weight: FontWeight.w600)
                                       .copyWith(
@@ -385,7 +409,7 @@ class _InviteCard extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            'Your invite code',
+            AppLocalizations.of(context).pairingYourInviteCode,
             style: AppTypography.body(12).copyWith(
               color: context.colors.foregroundMuted,
             ),
@@ -411,7 +435,7 @@ class _InviteCard extends StatelessWidget {
               Expanded(
                 child: _ActionPill(
                   icon: FontAwesomeIcons.copy,
-                  label: 'Copy',
+                  label: AppLocalizations.of(context).pairingActionCopy,
                   onTap: onCopy,
                 ),
               ),
@@ -419,7 +443,7 @@ class _InviteCard extends StatelessWidget {
               Expanded(
                 child: _ActionPill(
                   icon: FontAwesomeIcons.arrowUpFromBracket,
-                  label: 'Share',
+                  label: AppLocalizations.of(context).pairingActionShare,
                   onTap: onShare,
                 ),
               ),
@@ -480,7 +504,7 @@ class _InviteErrorCard extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'Could not load code. Tap to retry.',
+            AppLocalizations.of(context).pairingCodeLoadError,
             textAlign: TextAlign.center,
             style: AppTypography.body(13).copyWith(
               color: context.colors.foregroundMuted,
@@ -607,10 +631,13 @@ class _EnterCodeSheetState extends State<_EnterCodeSheet> {
                 letterSpacing: 4,
               ),
               decoration: InputDecoration(
-                hintText: 'A4F7K9',
+                // 임의의 6자리 코드를 예시로 두면 진짜 코드처럼 오해될 수 있어
+                // 안내 문구로 대체. 실제 입력은 letterSpacing 4로 나오지만
+                // placeholder는 0으로 자연스럽게.
+                hintText: AppLocalizations.of(context).pairingEnterCodeHint,
                 hintStyle: AppTypography.body(15).copyWith(
                   color: context.colors.foregroundMuted.withValues(alpha: 0.4),
-                  letterSpacing: 4,
+                  letterSpacing: 0,
                 ),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(
@@ -642,7 +669,7 @@ class _EnterCodeSheetState extends State<_EnterCodeSheet> {
                   ),
                   child: Center(
                     child: Text(
-                      'Pair',
+                      AppLocalizations.of(context).pairingEnterCodeAction,
                       style: AppTypography.body(15, weight: FontWeight.w600)
                           .copyWith(color: context.colors.background),
                     ),

@@ -26,7 +26,7 @@ export function OnboardingView({
           {t("onboarding.tagline")}
         </p>
 
-        <div className="mt-12 flex flex-col items-center gap-3">
+        <div className="mt-6 flex flex-col items-center gap-3">
           <a
             href={viewModel.appStoreUrl}
             target="_blank"

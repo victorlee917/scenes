@@ -86,13 +86,31 @@ final class VideoComposer {
 
         let videoSize = CGSize(width: 1080, height: 1920)
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        // HEVC(H.265). 같은 비트레이트에서 H.264 대비 50% 효율 — 어두운 평면
+        // (검정 backdrop 등)의 banding/blocking에 특히 강함. iOS 11+에서
+        // 디코딩 지원, 우리 deployment target(15.0)에선 보편적으로 OK. IG
+        // 스토리/카메라롤도 HEVC 자연 처리.
+        //
+        // 소스 fps는 caller가 frameDuration으로 전달 — 1/frameDuration이 실제
+        // 평균 fps. 인코더/플레이어가 일정 frame rate를 인지하도록 expected
+        // rate 힌트도 같이 박는다(playback 부드러움).
+        let sourceFps = max(1.0, 1.0 / frameDuration)
+        let expectedFps = Int(sourceFps.rounded())
         let videoSettings: [String: Any] = [
-          AVVideoCodecKey: AVVideoCodecType.h264,
+          AVVideoCodecKey: AVVideoCodecType.hevc,
           AVVideoWidthKey: Int(videoSize.width),
           AVVideoHeightKey: Int(videoSize.height),
           AVVideoCompressionPropertiesKey: [
-            AVVideoAverageBitRateKey: 6_000_000,
-            AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+            AVVideoAverageBitRateKey: 12_000_000,
+            // B-frame reordering 끄기 — 일관된 품질 + 시작부 안정.
+            AVVideoAllowFrameReorderingKey: false,
+            // GOP를 시간 기반(1초)으로 — fps와 무관하게 1초 단위 키프레임이라
+            // seeking/디코딩이 일관됨. frame-count GOP는 fps 낮을 때 키프레임
+            // 간격이 너무 벌어져 디코더 부담.
+            AVVideoMaxKeyFrameIntervalDurationKey: 1.0,
+            // 소스 fps 힌트 — 인코더 rate-control과 플레이어 둘 다 활용.
+            AVVideoExpectedSourceFrameRateKey: expectedFps,
+            AVVideoAverageNonDroppableFrameRateKey: expectedFps,
           ],
         ]
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -233,6 +251,12 @@ final class VideoComposer {
     ) else {
       return nil
     }
+
+    // CVPixelBufferCreate는 메모리를 0으로 초기화하지 않으므로(garbage),
+    // PNG가 fully opaque가 아니면 이전 frame 버퍼 잔여물이 비쳐 잔상처럼
+    // 보일 수 있다. 그리기 전 검정으로 fill해 garbage를 가린다.
+    context.setFillColor(UIColor.black.cgColor)
+    context.fill(CGRect(origin: .zero, size: size))
 
     if let cgImage = image.cgImage {
       context.draw(cgImage, in: CGRect(origin: .zero, size: size))

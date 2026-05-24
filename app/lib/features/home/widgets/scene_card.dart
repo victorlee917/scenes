@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/confirm_dialog.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../upload/upload_queue_view_model.dart';
 import '../../upload/upload_task.dart';
 import '../models/scene.dart';
@@ -78,12 +79,13 @@ Future<void> _confirmCancel(
   WidgetRef ref,
   String taskId,
 ) async {
+  final l10n = AppLocalizations.of(context);
   final confirmed = await ConfirmDialog.show(
     context: context,
     title: 'Cancel upload?',
-    message: 'Photos already uploaded will stay.',
-    confirmLabel: 'Stop',
-    cancelLabel: 'Keep uploading',
+    message: l10n.uploadCancelDialogMessage,
+    confirmLabel: l10n.playSceneStop,
+    cancelLabel: l10n.uploadCancelKeepUploading,
     isDestructive: true,
   );
   if (!confirmed) return;
@@ -231,7 +233,7 @@ class _UploadOverlay extends StatelessWidget {
                   vertical: 6,
                 ),
                 child: Text(
-                  'Cancel',
+                  AppLocalizations.of(context).commonCancel,
                   style: AppTypography.body(13, weight: FontWeight.w600)
                       .copyWith(
                     color: Colors.white.withValues(alpha: 0.85),

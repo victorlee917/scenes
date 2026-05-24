@@ -1,16 +1,19 @@
 import 'dart:io';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../core/data/signed_url_cache.dart';
 import '../../home/models/scene.dart';
 
 /// `scenes` 테이블 read/write Repository. RLS가 active couple 멤버만 INSERT/UPDATE
 /// 허용하므로 클라이언트는 그냥 query만 보내면 됨.
 class SceneRepository {
-  SceneRepository(this._client);
+  SceneRepository(this._client, this._urlCache);
 
   final SupabaseClient _client;
+  final SignedUrlCache _urlCache;
 
   /// `pair_id` 기준 scene 리스트. position 오름차순 (= 사용자 편집 순서).
   ///
@@ -27,16 +30,18 @@ class SceneRepository {
     final scenes = <Scene>[];
     for (final row in (rows as List).cast<Map<String, dynamic>>()) {
       final coverPath = row['cover_storage_path'] as String?;
-      String url = '';
-      if (coverPath != null && coverPath.isNotEmpty) {
-        try {
-          url = await _client.storage
-              .from('scene_media')
-              .createSignedUrl(coverPath, 86400);
-        } catch (_) {
-          // signed URL 실패 시 빈 문자열로 fallback — 카드는 colored box로 표시.
-        }
-      }
+      // SignedUrlCache가 7d TTL로 URL 재사용 → 같은 URL = Smart CDN cache hit.
+      final url = coverPath == null
+          ? ''
+          : (await _urlCache.getOrSign(coverPath)) ?? '';
+      // 표시용 날짜는 콘텐츠의 실제 occurred_at 범위로 결정. scene_summary
+      // 뷰가 earliest/latest를 미리 집계해주므로 추가 쿼리 없이 사용. 콘텐츠가
+      // 없는 scene은 user가 직접 입력한 s.dates로 fallback.
+      final earliestStr = row['earliest_occurred_at'] as String?;
+      final latestStr = row['latest_occurred_at'] as String?;
+      final List<dynamic> derivedDates = earliestStr != null
+          ? [earliestStr, latestStr ?? earliestStr]
+          : ((row['dates'] as List?) ?? const []);
       // 뷰는 scene_id로 키를 노출 → Scene.fromJson은 'id' 키를 기대하므로
       // 매핑해서 넘김.
       final mapped = <String, dynamic>{
@@ -44,7 +49,7 @@ class SceneRepository {
         'number': row['number'],
         'position': row['position'],
         'title': row['title'],
-        'dates': row['dates'],
+        'dates': derivedDates,
         'created_by': row['created_by'],
       };
       final media = SceneMediaCounts(
@@ -60,16 +65,25 @@ class SceneRepository {
 
   /// 생성된 scene의 cover image를 `upload-scene-cover` Edge Function 경유로 업로드.
   /// 반환: scene_media path와 1시간 signed URL.
+  ///
+  /// image_cropper가 WebP 출력을 지원 안 해 JPEG로 받은 뒤 여기서 한 번 더
+  /// WebP q80으로 재인코딩 → 같은 시각 품질에 30%+ 작음.
   Future<({String storagePath, String signedUrl})> uploadCover({
     required String sceneId,
     required File file,
   }) async {
-    final bytes = await file.readAsBytes();
+    final jpegBytes = await file.readAsBytes();
+    final webpBytes = await FlutterImageCompress.compressWithList(
+      jpegBytes,
+      format: CompressFormat.webp,
+      quality: 80,
+      keepExif: false,
+    );
     final response = await _client.functions.invoke(
       'upload-scene-cover',
-      body: bytes,
+      body: webpBytes,
       headers: {
-        'Content-Type': 'image/jpeg',
+        'Content-Type': 'image/webp',
         'X-Scene-Id': sceneId,
       },
     );
@@ -170,5 +184,8 @@ class SceneRepository {
 }
 
 final sceneRepositoryProvider = Provider<SceneRepository>((ref) {
-  return SceneRepository(Supabase.instance.client);
+  return SceneRepository(
+    Supabase.instance.client,
+    ref.watch(signedUrlCacheProvider),
+  );
 });

@@ -1,6 +1,8 @@
 // upload-avatar
 //
-// Authenticated client posts JPEG bytes (raw body, Content-Type: image/jpeg).
+// Authenticated client posts WebP (preferred) or JPEG bytes as raw body.
+// Format is detected from magic bytes — Content-Type header is ignored to
+// avoid spoofing.
 // 1. Verify caller JWT via auth.getUser() (user-context client).
 // 2. Upload using service role client (bypasses RLS) to caller's path.
 //
@@ -41,11 +43,24 @@ Deno.serve(async (req) => {
   }
   const userId = userRes.user.id;
 
-  // 2) bytes 읽기.
+  // 2) bytes 읽기 + magic byte로 포맷 검출. Content-Type header는 클라가
+  // spoof할 수 있어 무시. WebP 우선 권장이나 JPEG도 호환.
   const bytes = new Uint8Array(await req.arrayBuffer());
   if (bytes.byteLength === 0) {
     return new Response("Empty body", { status: 400 });
   }
+  const isJpeg = bytes.length >= 3 &&
+    bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  const isWebp = bytes.length >= 12 &&
+    bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 &&
+    bytes[3] === 0x46 && // 'RIFF'
+    bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 &&
+    bytes[11] === 0x50; // 'WEBP'
+  if (!isJpeg && !isWebp) {
+    return new Response("Body must be JPEG or WebP", { status: 400 });
+  }
+  const ext = isWebp ? "webp" : "jpg";
+  const mime = isWebp ? "image/webp" : "image/jpeg";
 
   // 3) service role로 RLS 우회해 업로드.
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -58,12 +73,12 @@ Deno.serve(async (req) => {
   );
 
   const ts = Date.now();
-  const path = `${userId}/${ts}.jpg`;
+  const path = `${userId}/${ts}.${ext}`;
 
   const { error: uploadError } = await adminClient.storage
     .from("avatars")
     .upload(path, bytes, {
-      contentType: "image/jpeg",
+      contentType: mime,
       upsert: true,
     });
 

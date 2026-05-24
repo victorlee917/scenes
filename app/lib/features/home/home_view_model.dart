@@ -34,6 +34,22 @@ class HomeState {
         currentPageIndex: currentPageIndex ?? this.currentPageIndex,
         isPaired: isPaired ?? this.isPaired,
       );
+
+  // 값 동일성 — build()가 watch하는 provider가 재방출돼도 합성 결과가 같으면
+  // Riverpod이 listener에 알리지 않아 불필요한 rebuild를 건너뛴다. scenes는
+  // scenesProvider가 같은 list 인스턴스를 유지하므로 identity 비교로 충분.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HomeState &&
+          couple == other.couple &&
+          scenes == other.scenes &&
+          currentPageIndex == other.currentPageIndex &&
+          isPaired == other.isPaired;
+
+  @override
+  int get hashCode =>
+      Object.hash(couple, scenes, currentPageIndex, isPaired);
 }
 
 class HomeViewModel extends Notifier<HomeState> {
@@ -71,10 +87,8 @@ class HomeViewModel extends Notifier<HomeState> {
 
     // 최초 진입 시 가장 최신(마지막) scene에 포커스. 사용자가 페이지를 이동
     // 했었으면 그 위치 유지.
-    final defaultIndex = scenes.isEmpty ? 0 : scenes.length - 1;
-    final pageIndex = _stickyPageIndex == null
-        ? defaultIndex
-        : _stickyPageIndex!.clamp(0, scenes.isEmpty ? 0 : scenes.length - 1);
+    final lastIndex = scenes.isEmpty ? 0 : scenes.length - 1;
+    final pageIndex = _stickyPageIndex?.clamp(0, lastIndex) ?? lastIndex;
 
     return HomeState(
       couple: couple,

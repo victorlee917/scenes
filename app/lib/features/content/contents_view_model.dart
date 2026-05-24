@@ -44,6 +44,24 @@ class ContentsForSceneViewModel
       return ref.read(contentRepositoryProvider).listByScene(arg);
     });
   }
+
+  /// contents 순서 변경 — optimistic으로 즉시 state 갱신 후 RPC. 실패 시
+  /// 이전 순서로 revert. 입력 [newOrder]는 화면에 보이는 순서대로의 Content
+  /// 리스트.
+  Future<void> reorder(List<Content> newOrder) async {
+    final previous = state.valueOrNull ?? const <Content>[];
+    state = AsyncValue.data(List.unmodifiable(newOrder));
+
+    try {
+      await ref.read(contentRepositoryProvider).reorderContents(
+            sceneId: arg,
+            orderedIds: newOrder.map((c) => c.id).toList(growable: false),
+          );
+    } catch (e, st) {
+      state = AsyncValue.data(previous);
+      Error.throwWithStackTrace(e, st);
+    }
+  }
 }
 
 final contentsForSceneProvider = AsyncNotifierProviderFamily<

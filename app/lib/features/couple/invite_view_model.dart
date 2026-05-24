@@ -11,8 +11,9 @@ import 'models/couple_invite.dart';
 class MyInviteViewModel extends AsyncNotifier<CoupleInvite> {
   @override
   Future<CoupleInvite> build() async {
-    // 로그인 세션이 바뀌면 자동 refetch.
-    ref.watch(authViewModelProvider.select((s) => s.session));
+    // 로그인 유저가 바뀌면 자동 refetch. user.id만 관찰 — 토큰 갱신만으로는
+    // getOrCreate가 다시 돌지 않게.
+    ref.watch(authViewModelProvider.select((s) => s.session?.user.id));
     return ref.read(coupleRepositoryProvider).getOrCreateMyInvite();
   }
 

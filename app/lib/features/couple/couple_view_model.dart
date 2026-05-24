@@ -16,12 +16,15 @@ class ActiveCoupleViewModel
 
   @override
   Future<ActiveCoupleAndPartner?> build() async {
-    final session = ref.watch(authViewModelProvider.select((s) => s.session));
+    // 로그인 유저 id만 관찰 — 토큰 갱신으로 Session 객체만 바뀌는 경우엔
+    // couple refetch나 realtime 채널 재구독을 하지 않는다.
+    final userId =
+        ref.watch(authViewModelProvider.select((s) => s.session?.user.id));
 
     // couples UPDATE 구독 — since_date / status 전이를 양쪽 클라 동기화.
     _coupleUpdateSub?.cancel();
     _coupleUpdateSub = null;
-    if (session != null) {
+    if (userId != null) {
       _coupleUpdateSub = ref
           .read(coupleRepositoryProvider)
           .watchActiveCoupleUpdates()
@@ -32,7 +35,7 @@ class ActiveCoupleViewModel
       _partnerProfileSub?.cancel();
     });
 
-    if (session == null) {
+    if (userId == null) {
       _swapPartnerSub(null);
       return null;
     }

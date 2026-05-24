@@ -1,95 +1,26 @@
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'data/mapbox_repository.dart';
+import 'data/place_search_repository.dart';
 import 'models/place_hit.dart';
+import 'search_picker_view_model.dart';
 
-class PlacePickerState {
-  const PlacePickerState({
-    this.query = '',
-    this.results = const [],
-    this.isLoading = false,
-    this.error,
-  });
-
-  final String query;
-  final List<PlaceHit> results;
-  final bool isLoading;
-  final String? error;
-
-  PlacePickerState copyWith({
-    String? query,
-    List<PlaceHit>? results,
-    bool? isLoading,
-    Object? error = _sentinel,
-  }) {
-    return PlacePickerState(
-      query: query ?? this.query,
-      results: results ?? this.results,
-      isLoading: isLoading ?? this.isLoading,
-      error: identical(error, _sentinel) ? this.error : error as String?,
-    );
-  }
-}
-
-const _sentinel = Object();
-
-/// 장소 검색 화면 ViewModel.
-///
-/// 입력 → 300ms 디바운스 → Edge Function 호출 → 상태 업데이트.
-/// stale guard로 빠르게 타이핑할 때 늦게 도착한 결과가 새 결과를 덮지 않도록.
-class PlacePickerViewModel extends AutoDisposeNotifier<PlacePickerState> {
-  static const _debounce = Duration(milliseconds: 300);
-
-  Timer? _debounceTimer;
-  int _requestSeq = 0;
+/// 장소 검색 화면 ViewModel — Apple Maps / Mapbox 검색을
+/// [SearchPickerViewModel] 흐름에 연결.
+class PlacePickerViewModel extends SearchPickerViewModel<PlaceHit> {
+  // Apple native 호출은 외부 비용 0이라 debounce를 짧게 가져가도 부담 없지만
+  // UX 안정성(타이핑 중 리스트 깜빡임 최소화)을 위해 300ms 유지.
+  @override
+  Duration get debounce => const Duration(milliseconds: 300);
 
   @override
-  PlacePickerState build() {
-    ref.onDispose(() => _debounceTimer?.cancel());
-    return const PlacePickerState();
-  }
-
-  void updateQuery(String query, {String locale = 'en'}) {
-    state = state.copyWith(query: query);
-    _debounceTimer?.cancel();
-
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) {
-      state = state.copyWith(
-        results: const [],
-        isLoading: false,
-        error: null,
-      );
-      return;
-    }
-
-    _debounceTimer = Timer(_debounce, () {
-      _runSearch(trimmed, locale: locale);
-    });
-  }
-
-  Future<void> _runSearch(String query, {required String locale}) async {
-    final seq = ++_requestSeq;
-    state = state.copyWith(isLoading: true, error: null);
-
-    try {
-      final repo = ref.read(mapboxRepositoryProvider);
-      final results = await repo.search(query, locale: locale);
-      if (seq != _requestSeq) return;
-      state = state.copyWith(results: results, isLoading: false);
-    } catch (e) {
-      if (seq != _requestSeq) return;
-      state = state.copyWith(
-        isLoading: false,
-        error: e.toString(),
-      );
-    }
+  Future<List<PlaceHit>> search(String query, {required String locale}) {
+    return ref
+        .read(placeSearchRepositoryProvider)
+        .search(query, locale: locale);
   }
 }
 
-final placePickerViewModelProvider =
-    NotifierProvider.autoDispose<PlacePickerViewModel, PlacePickerState>(
+final placePickerViewModelProvider = NotifierProvider.autoDispose<
+    PlacePickerViewModel, SearchPickerState<PlaceHit>>(
   PlacePickerViewModel.new,
 );

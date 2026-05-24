@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/constants/app_urls.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/floating_bottom_sheet.dart';
+import '../../l10n/app_localizations.dart';
 import '../auth/auth_view_model.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -83,15 +85,15 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
 
   /// 기술적 에러 메시지를 유저 친화적 문구로 정리. 사용자 취소는 toast 자체를
   /// 띄우지 않기 위해 null 반환.
-  String? _humanizeAuthError(String raw) {
+  String? _humanizeAuthError(AppLocalizations l10n, String raw) {
     final lower = raw.toLowerCase();
     if (lower.contains('cancel')) return null;
     if (lower.contains('network') ||
         lower.contains('socket') ||
         lower.contains('host')) {
-      return 'Check your connection and try again.';
+      return l10n.authErrorNetwork;
     }
-    return 'Sign in failed. Please try again.';
+    return l10n.authErrorGeneric;
   }
 
   void _showLoginSheet() {
@@ -138,11 +140,12 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final l10n = AppLocalizations.of(context);
 
     // 로그인 실패 시 앱 톤에 맞는 blur toast로 안내. 사용자 취소(cancel)는 무시.
     ref.listen(authViewModelProvider.select((s) => s.error), (prev, next) {
       if (next == null || next.isEmpty) return;
-      final humanized = _humanizeAuthError(next);
+      final humanized = _humanizeAuthError(l10n, next);
       if (humanized == null) return;
       AppToast.show(context, humanized);
     });
@@ -262,7 +265,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                             ),
                             child: Center(
                               child: Text(
-                                'Get Started',
+                                l10n.onboardingGetStarted,
                                 style: AppTypography.body(15, weight: FontWeight.w600)
                                     .copyWith(color: context.colors.background),
                               ),
@@ -301,6 +304,7 @@ class _LoginSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -319,13 +323,13 @@ class _LoginSheet extends StatelessWidget {
             children: [
               _LoginButton(
                 icon: FontAwesomeIcons.apple,
-                label: 'Continue with Apple',
+                label: l10n.onboardingContinueWithApple,
                 onTap: onApple,
               ),
               const SizedBox(height: 10),
               _LoginButton(
                 icon: FontAwesomeIcons.google,
-                label: 'Continue with Google',
+                label: l10n.onboardingContinueWithGoogle,
                 onTap: onGoogle,
               ),
               const SizedBox(height: 10),
@@ -333,7 +337,7 @@ class _LoginSheet extends StatelessWidget {
               // mark to assets/.
               _LoginButton(
                 icon: FontAwesomeIcons.solidComment,
-                label: 'Continue with Kakao',
+                label: l10n.onboardingContinueWithKakao,
                 onTap: onKakao,
               ),
             ],
@@ -413,6 +417,7 @@ class _AgreementSheetState extends State<_AgreementSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -439,16 +444,22 @@ class _AgreementSheetState extends State<_AgreementSheet> {
             child: Column(
               children: [
                 _AgreementTile(
-                  label: 'Privacy Policy',
+                  label: l10n.settingsPrivacyPolicy,
                   checked: _privacyChecked,
                   onCheck: () => setState(() => _privacyChecked = !_privacyChecked),
-                  onView: () => launchUrl(Uri.parse('https://scenes.app/privacy')),
+                  onView: () => launchUrl(
+                    Uri.parse(AppUrls.privacyPolicy),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
                 _AgreementTile(
-                  label: 'Terms of Service',
+                  label: l10n.settingsTermsOfService,
                   checked: _termsChecked,
                   onCheck: () => setState(() => _termsChecked = !_termsChecked),
-                  onView: () => launchUrl(Uri.parse('https://scenes.app/terms')),
+                  onView: () => launchUrl(
+                    Uri.parse(AppUrls.termsOfService),
+                    mode: LaunchMode.externalApplication,
+                  ),
                 ),
               ],
             ),
@@ -472,7 +483,7 @@ class _AgreementSheetState extends State<_AgreementSheet> {
                   ),
                   child: Center(
                     child: Text(
-                      'Continue',
+                      l10n.onboardingAgreementContinue,
                       style: AppTypography.body(15, weight: FontWeight.w600)
                           .copyWith(color: context.colors.background),
                     ),

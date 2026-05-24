@@ -1,14 +1,17 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
 import '../../core/widgets/splash_view.dart';
 import '../../l10n/app_localizations.dart';
+import '../content/contents_view_model.dart';
 import '../couple/couple_view_model.dart';
 import '../scene/scenes_view_model.dart';
 import 'home_view_model.dart';
@@ -17,10 +20,12 @@ import 'widgets/arc_dial.dart';
 import 'widgets/add_media_sheet.dart';
 import 'widgets/couple_strip.dart';
 import 'widgets/create_scene_sheet.dart';
-import 'widgets/play_scene_sheet.dart';
+import 'widgets/recap_screen.dart';
 import 'widgets/profile_screen.dart';
 import 'widgets/focused_scene_info.dart';
 import 'widgets/scene_card.dart';
+import '../push/push_deeplink.dart';
+import 'models/scene.dart';
 import 'widgets/scene_detail_screen.dart';
 import 'widgets/scene_list_screen.dart';
 import 'widgets/transport_controls.dart';
@@ -58,6 +63,12 @@ class _HomeViewState extends ConsumerState<HomeView> {
   static const double _minOpacity = 0.0;
 
   PageController? _pageController;
+
+  // 푸시 딥링크가 처리 대기 중인지 — 같은 intent에 대해 post-frame 콜백을
+  // 중복 큐잉하지 않도록 가드. intent 처리가 끝나면 다시 false로.
+  bool _deeplinkScheduled = false;
+  // 같은 intent를 build마다 중복 로그 안 찍도록 set으로 dedupe.
+  final Set<PushDeeplink> _lastLoggedIntent = {};
 
   /// scenes가 처음 로드되고 cover 이미지들도 모두 precache된 시점부터 true.
   /// 그 전엔 스피너만 보여줌 — PageView 안의 Image.network 로딩으로 한 프레임
@@ -128,6 +139,63 @@ class _HomeViewState extends ConsumerState<HomeView> {
     }
   }
 
+  /// 푸시 딥링크 인텐트 → 해당 scene의 detail로 push. content_id가 있으면
+  /// detail이 contents 로드 직후 자동으로 그 콘텐츠 viewer를 열도록 전달.
+  /// scene이 현재 리스트에 없으면(삭제됐거나 다른 페어 컨텍스트) 무시.
+  void _navigateToDeeplink(PushDeeplink intent, List<Scene> scenes) {
+    final sceneId = intent.sceneId;
+    if (sceneId == null) {
+      // ignore: discarded_futures
+      _logDeeplink('nav_skip', detail: 'no_scene_id');
+      return;
+    }
+    Scene? scene;
+    for (final s in scenes) {
+      if (s.id == sceneId) {
+        scene = s;
+        break;
+      }
+    }
+    if (scene == null) {
+      // ignore: discarded_futures
+      _logDeeplink('nav_skip',
+          detail:
+              'scene_not_in_list scene=$sceneId scenes_count=${scenes.length}');
+      return;
+    }
+    final viewportWidth = MediaQuery.sizeOf(context).width;
+    // ignore: discarded_futures
+    _logDeeplink('nav_push',
+        detail:
+            'scene=$sceneId content=${intent.contentId}');
+    // 푸시는 새 콘텐츠/리액션을 알리는 거라 detail에서 봐야 할 데이터가 보통
+    // 캐시 미반영 상태. invalidate로 fresh fetch 강제.
+    ref.invalidate(contentsForSceneProvider(sceneId));
+    // ignore: discarded_futures
+    ref.read(scenesProvider.notifier).softRefresh();
+    Navigator.of(context).push(
+      SceneDetailScreen.fadeRoute(
+        scene: scene,
+        canisterSize: viewportWidth * _viewportFraction,
+        initialContentId: intent.contentId,
+      ),
+    );
+  }
+
+  Future<void> _logDeeplink(String step, {String? detail}) async {
+    // 진단용 계측 — release 빌드에선 push_debug_log 쓰기를 건너뛴다.
+    if (!kDebugMode) return;
+    try {
+      final client = Supabase.instance.client;
+      final row = <String, dynamic>{
+        'user_id': client.auth.currentUser?.id,
+        'step': 'dl_$step',
+      };
+      if (detail != null) row['detail'] = detail;
+      await client.from('push_debug_log').insert(row);
+    } catch (_) {}
+  }
+
   bool _onScrollNotification(ScrollNotification notification) {
     if (notification is ScrollStartNotification) {
       if (!_isScrolling) {
@@ -187,17 +255,8 @@ class _HomeViewState extends ConsumerState<HomeView> {
 
   }
 
-  void _handlePlay() {
-    final scenes = ref.read(homeViewModelProvider).scenes;
-    if (scenes.isEmpty) return;
-    final defaultScene =
-        (_displayedIndex >= 0 && _displayedIndex < scenes.length)
-            ? scenes[_displayedIndex]
-            : scenes.last;
-    PlaySceneSheet.show(
-      context: context,
-      defaultSceneId: defaultScene.id,
-    );
+  void _handleRecap() {
+    Navigator.of(context).push(RecapScreen.route());
   }
 
   // ── build ───────────────────────────────────────────────────
@@ -224,6 +283,31 @@ class _HomeViewState extends ConsumerState<HomeView> {
         coupleAsync.value != null &&
         scenesAsync.hasValue &&
         !scenesAsync.isLoading;
+
+    // 푸시 알림 탭으로 들어온 딥링크 인텐트 처리.
+    //   - cold-start: main에서 set한 intent가 build 시점부터 살아있음.
+    //   - background→foreground: intent가 도착하면 다음 build에서 잡힘.
+    // ready + scenes.isNotEmpty이고 처음 보는 intent일 때만 post-frame 큐잉.
+    final pendingIntent = ref.watch(pushDeeplinkProvider);
+    if (pendingIntent != null && !_lastLoggedIntent.contains(pendingIntent)) {
+      _lastLoggedIntent.add(pendingIntent);
+      // ignore: discarded_futures
+      _logDeeplink('home_seen',
+          detail:
+              'kind=${pendingIntent.kind} scene=${pendingIntent.sceneId} content=${pendingIntent.contentId} ready=$ready scenes=${scenes.length} scheduled=$_deeplinkScheduled');
+    }
+    if (pendingIntent != null &&
+        ready &&
+        scenes.isNotEmpty &&
+        !_deeplinkScheduled) {
+      _deeplinkScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(pushDeeplinkProvider.notifier).consume();
+        _navigateToDeeplink(pendingIntent, scenes);
+        _deeplinkScheduled = false;
+      });
+    }
 
     // 첫 로드: ready되면 cover + avatar 이미지들 precache 시작.
     if (ready && !_precacheKickedOff) {
@@ -345,7 +429,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                           return;
                         }
                         final page = controller.page ??
-                            controller.initialPage.toDouble();
+                            _lastFocusedIndex.toDouble();
                         if (page.round() != index) {
                           controller.animateToPage(
                             index,
@@ -371,11 +455,14 @@ class _HomeViewState extends ConsumerState<HomeView> {
                         if (controller.hasClients &&
                             controller.position.haveDimensions) {
                           final page = controller.page ??
-                              controller.initialPage.toDouble();
+                              _lastFocusedIndex.toDouble();
                           signed = page - index;
                         } else {
-                          signed =
-                              (controller.initialPage - index).toDouble();
+                          // 컨트롤러가 아직 dimension을 못 받은 프레임(예:
+                          // 테마 변경 후 rebuild)에선 stale한 initialPage가
+                          // 아니라 현재 포커스 인덱스 기준으로 arc를 계산해야
+                          // 포커스 캐니스터가 엉뚱하게 아래로 내려앉지 않는다.
+                          signed = (_lastFocusedIndex - index).toDouble();
                         }
                         final absSigned = signed.abs().clamp(0.0, 3.0);
 
@@ -596,7 +683,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
               child: TransportControls(
                 onSort: _handleSort,
                 onAdd: _handleAdd,
-                onPlay: _handlePlay,
+                onRecap: _handleRecap,
               ),
             ),
         ],

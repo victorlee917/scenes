@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,12 +72,12 @@ class AuthRepository {
   }
 
   /// 충분한 길이의 random nonce 생성. Apple OIDC 권장(32자 이상).
+  /// CSPRNG(Random.secure)로 32바이트 생성 후 url-safe base64로 인코딩 —
+  /// ~43자 nonce. timing/hashCode 기반 약한 엔트로피 회피.
   String _generateRawNonce() {
-    final now = DateTime.now().microsecondsSinceEpoch;
-    // microsecondsSinceEpoch + random suffix로 16자+ 보장.
-    final rand =
-        (now ^ identityHashCode(Object())).toRadixString(36);
-    return '${now.toRadixString(36)}$rand'.padRight(32, '0');
+    final rng = Random.secure();
+    final bytes = List<int>.generate(32, (_) => rng.nextInt(256));
+    return base64Url.encode(bytes).replaceAll('=', '');
   }
 
   /// Google로 로그인 후 Supabase 세션 생성.

@@ -54,23 +54,14 @@ class _DangerZoneScreenState extends ConsumerState<DangerZoneScreen> {
                 bottom: padding.bottom + 40,
               ),
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 4, 24, 16),
-                  child: Text(
-                    l10n.dangerZoneSubtitle,
-                    style: AppTypography.body(13).copyWith(
-                      color: context.colors.foregroundMuted,
-                    ),
-                  ),
-                ),
                 _DangerTile(
                   label: l10n.settingsDisconnect,
                   onTap: () async {
                     final confirmed = await ConfirmDialog.show(
                       context: context,
-                      title: 'Disconnect?',
-                      message: 'You and your person will be unpaired.',
-                      confirmLabel: 'Disconnect',
+                      title: l10n.disconnectConfirmTitle,
+                      message: l10n.disconnectConfirmMessage,
+                      confirmLabel: l10n.disconnectConfirmAction,
                       isDestructive: true,
                     );
                     if (!confirmed || !mounted) return;
@@ -86,7 +77,7 @@ class _DangerZoneScreenState extends ConsumerState<DangerZoneScreen> {
                           .refresh();
                     } catch (_) {
                       if (!context.mounted) return;
-                      AppToast.show(context, 'Failed to disconnect.');
+                      AppToast.show(context, l10n.disconnectFailedToast);
                     }
                   },
                 ),

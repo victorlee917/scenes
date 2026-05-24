@@ -12,8 +12,10 @@ import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../l10n/app_localizations.dart';
 import '../models/scene.dart';
 import '../../couple/couple_view_model.dart';
+import '../../credit/widgets/credit_section.dart';
 import '../../profile/profile_view_model.dart';
 import '../../settings/settings_screen.dart';
 import 'edit_profile_sheet.dart';
@@ -22,6 +24,9 @@ import '../../subscription/subscription_screen.dart';
 import '../../subscription/subscription_view_model.dart';
 import '../home_view_model.dart';
 import 'detail_app_bar.dart';
+import 'recap_screen.dart';
+import 'scene_detail_screen.dart';
+import 'scene_list_screen.dart';
 
 /// Couple 프로필 화면.
 ///
@@ -201,14 +206,30 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 28),
                   FadeTransition(
                     opacity: routeAnim,
-                    child: Text(
-                      '${couple.partnerAName} · ${couple.partnerBName}',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.display(22, text: jointName)
-                          .copyWith(
-                        color: context.colors.foreground,
-                        fontWeight: FontWeight.w700,
+                    child: Text.rich(
+                      TextSpan(
+                        style: AppTypography.display(22, text: jointName)
+                            .copyWith(
+                          color: context.colors.foreground,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        children: [
+                          // 내 이름만 tappable — 탭하면 프로필 수정 시트 오픈.
+                          // 파트너 이름은 plain text (본인 화면에서 수정 불가).
+                          TextSpan(
+                            text: couple.partnerAName,
+                            recognizer: TapGestureRecognizer()
+                              ..onTap = () => EditProfileSheet.show(
+                                    context: context,
+                                    currentName: couple.partnerAName,
+                                    currentImageUrl: couple.partnerAImageUrl,
+                                  ),
+                          ),
+                          const TextSpan(text: ' · '),
+                          TextSpan(text: couple.partnerBName),
+                        ],
                       ),
+                      textAlign: TextAlign.center,
                     ),
                   ),
                   const SizedBox(height: 36),
@@ -227,6 +248,35 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               sceneCount,
                               totalMedia,
                               onDateTap: () => _showDatePicker(couple.sinceDate),
+                              onScenesTap: () {
+                                final scenes =
+                                    ref.read(homeViewModelProvider).scenes;
+                                if (scenes.isEmpty) return;
+                                Navigator.of(context).push(
+                                  SceneListScreen.route(
+                                    scenes: scenes,
+                                    onSceneTap: (sceneId) {
+                                      final scene = scenes.firstWhere(
+                                        (s) => s.id == sceneId,
+                                        orElse: () => scenes.first,
+                                      );
+                                      final viewportWidth =
+                                          MediaQuery.sizeOf(context).width;
+                                      Navigator.of(context).push(
+                                        SceneDetailScreen.fadeRoute(
+                                          scene: scene,
+                                          canisterSize: viewportWidth * 0.5,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                              onMediaTap: (mediaType) {
+                                Navigator.of(context).push(
+                                  RecapScreen.route(initialMedia: mediaType),
+                                );
+                              },
                             ),
                           ],
                         ),
@@ -253,6 +303,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   const SizedBox(height: 36),
                   _divider(context),
                   const SizedBox(height: 36),
+                  FadeTransition(
+                    opacity: routeAnim,
+                    child: const CreditSection(),
+                  ),
                   FadeTransition(
                     opacity: routeAnim,
                     child: const _ScenesMaxBanner(),
@@ -314,11 +368,20 @@ List<InlineSpan> _buildNarrativeSpans(
   int sceneCount,
   SceneMediaCounts media, {
   VoidCallback? onDateTap,
+  VoidCallback? onScenesTap,
+  void Function(String mediaType)? onMediaTap,
 }) {
   final hl = _highlight(context);
   final dateRecognizer = onDateTap != null
       ? (TapGestureRecognizer()..onTap = onDateTap)
       : null;
+  final scenesRecognizer = onScenesTap != null
+      ? (TapGestureRecognizer()..onTap = onScenesTap)
+      : null;
+  TapGestureRecognizer? mediaRecognizer(String mediaType) =>
+      onMediaTap != null
+          ? (TapGestureRecognizer()..onTap = () => onMediaTap(mediaType))
+          : null;
   if (sceneCount == 0) {
     return [
       const TextSpan(text: 'Since '),
@@ -336,16 +399,21 @@ List<InlineSpan> _buildNarrativeSpans(
     const TextSpan(text: 'Since '),
     TextSpan(text: '$date,', style: hl, recognizer: dateRecognizer),
     const TextSpan(text: '\nwe have kept\n'),
-    TextSpan(text: '$sceneCount Scenes', style: hl),
+    TextSpan(
+      text: '$sceneCount Scenes',
+      style: hl,
+      recognizer: scenesRecognizer,
+    ),
     const TextSpan(text: ' between us.'),
   ];
 
-  final mediaParts = <({String verb, int count, String noun})>[];
+  final mediaParts = <({String verb, int count, String noun, String type})>[];
   if (media.photos > 0) {
     mediaParts.add((
       verb: 'took',
       count: media.photos,
       noun: media.photos == 1 ? 'photo' : 'photos',
+      type: 'photo',
     ));
   }
   if (media.films > 0) {
@@ -353,6 +421,7 @@ List<InlineSpan> _buildNarrativeSpans(
       verb: 'watched',
       count: media.films,
       noun: media.films == 1 ? 'film' : 'films',
+      type: 'film',
     ));
   }
   if (media.music > 0) {
@@ -360,6 +429,7 @@ List<InlineSpan> _buildNarrativeSpans(
       verb: 'listened to',
       count: media.music,
       noun: media.music == 1 ? 'song' : 'songs',
+      type: 'music',
     ));
   }
   if (media.places > 0) {
@@ -367,6 +437,7 @@ List<InlineSpan> _buildNarrativeSpans(
       verb: 'visited',
       count: media.places,
       noun: media.places == 1 ? 'place' : 'places',
+      type: 'place',
     ));
   }
 
@@ -380,7 +451,12 @@ List<InlineSpan> _buildNarrativeSpans(
         spans.add(const TextSpan(text: ', '));
       }
       spans.add(TextSpan(text: '${p.verb} '));
-      spans.add(TextSpan(text: '${p.count} ${p.noun}', style: hl));
+      // 카운트+명사 부분만 탭 영역. 탭 → RecapScreen에 해당 매체 앵커링.
+      spans.add(TextSpan(
+        text: '${p.count} ${p.noun}',
+        style: hl,
+        recognizer: mediaRecognizer(p.type),
+      ));
     }
     spans.add(const TextSpan(text: '.'));
   }
@@ -577,7 +653,9 @@ class _SinceDatePickerState extends State<_SinceDatePicker> {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = DateFormat.yMMMMd('en').format(_selected);
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final dateStr = DateFormat.yMMMMd(locale).format(_selected);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -635,7 +713,7 @@ class _SinceDatePickerState extends State<_SinceDatePicker> {
                 ),
                 child: Center(
                   child: Text(
-                    'Confirm',
+                    l10n.datePickerConfirm,
                     style: AppTypography.body(15, weight: FontWeight.w600)
                         .copyWith(color: context.colors.background),
                   ),
@@ -655,6 +733,7 @@ class _ScenesMaxBanner extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final isSubscribed = ref.watch(isSubscribedProvider);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -693,11 +772,11 @@ class _ScenesMaxBanner extends ConsumerWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               isSubscribed
-                  ? 'Making our scenes more vivid.'
-                  : 'Make our scenes more vivid.',
+                  ? l10n.subscriptionBannerTaglineActive
+                  : l10n.subscriptionTagline,
               style: AppTypography.body(14).copyWith(
                 color: context.colors.foregroundMuted,
               ),
@@ -714,7 +793,7 @@ class _ScenesMaxBanner extends ConsumerWidget {
                   color: context.colors.foreground.withValues(alpha: 0.08),
                 ),
                 child: Text(
-                  'Learn more',
+                  l10n.subscriptionBannerLearnMore,
                   style: AppTypography.body(13, weight: FontWeight.w600)
                       .copyWith(color: context.colors.foreground),
                 ),

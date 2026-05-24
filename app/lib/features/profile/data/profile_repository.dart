@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -41,12 +42,15 @@ class ProfileRepository {
     if (id == null) {
       throw StateError('Cannot complete onboarding while signed out.');
     }
+    // avatar_url은 항상 명시적으로 set — null이면 null로 덮어 옛 사진 클리어.
+    // 첫 가입 사용자는 처음부터 null이라 영향 없고, 재가입 사용자는 새 사진을
+    // 안 올렸으면 옛 avatar_url이 그대로 남는 버그를 막음.
     final patch = <String, dynamic>{
       'name': name,
+      'avatar_url': avatarUrl,
       'onboarding_completed_at': DateTime.now().toUtc().toIso8601String(),
       'deleted_at': null,
     };
-    if (avatarUrl != null) patch['avatar_url'] = avatarUrl;
     final updated = await _client
         .from('profiles')
         .update(patch)
@@ -103,16 +107,26 @@ class ProfileRepository {
   /// `upload-avatar` Edge Function 경유. 신형 sb_publishable_... 키로 storage에
   /// 직접 업로드 시 RLS auth.uid()가 null로 평가되는 호환성 이슈가 있어서, EF
   /// 안에서 caller JWT + legacy anon 키로 storage를 호출하는 패턴 사용.
+  ///
+  /// image_cropper가 WebP 출력을 지원 안 해 JPEG로 받은 뒤 여기서 한 번 더
+  /// WebP q80으로 재인코딩 → 같은 시각 품질에 30%+ 작음.
   Future<String> uploadAvatar(File file) async {
     final id = _myId;
     if (id == null) {
       throw StateError('Cannot upload avatar while signed out.');
     }
-    final bytes = await file.readAsBytes();
+    final jpegBytes = await file.readAsBytes();
+    // 256px 짜리 작은 사진이라 사이즈 조절 없이 단순 포맷 변환.
+    final webpBytes = await FlutterImageCompress.compressWithList(
+      jpegBytes,
+      format: CompressFormat.webp,
+      quality: 80,
+      keepExif: false,
+    );
     final response = await _client.functions.invoke(
       'upload-avatar',
-      body: bytes,
-      headers: {'Content-Type': 'image/jpeg'},
+      body: webpBytes,
+      headers: {'Content-Type': 'image/webp'},
     );
     final data = response.data;
     if (data is! Map<String, dynamic>) {
