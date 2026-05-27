@@ -17,6 +17,9 @@ import "./lib/i18n/i18n";
 //   - 디스플레이(display): Playfair Display — 영문 제목용 세리프. 향후 KR 로케일
 //     추가 시 Hahmlet도 같이 등록할 예정.
 export const links: Route.LinksFunction = () => [
+  // GH Pages가 /scenes/ sub-path로 서빙하므로 base path 명시. import.meta.env.BASE_URL
+  // 은 Vite의 `base`(=/scenes/)를 그대로 반환 — 환경별 자동 매칭.
+  { rel: "icon", type: "image/png", href: `${import.meta.env.BASE_URL}favicon.png` },
   { rel: "preconnect", href: "https://cdn.jsdelivr.net", crossOrigin: "anonymous" },
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
   {
