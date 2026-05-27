@@ -37,12 +37,27 @@ export const links: Route.LinksFunction = () => [
   },
 ];
 
+// 소셜 미디어 카드용 절대 URL. og:image 등은 path가 아니라 풀 URL이라야
+// 스크래퍼(페이스북·트위터·슬랙 등)가 이미지를 가져갈 수 있음. 추후 커스텀
+// 도메인으로 옮기면 여기만 바꾸면 됨.
+const _siteOrigin = "https://victorlee917.github.io/scenes";
+const _ogImageUrl = `${_siteOrigin}/og-image.png`;
+
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Open Graph / Twitter card 공통 메타. og:title / og:description은
+            라우트별 meta()가 덮어쓸 수 있도록 <Meta /> 위에 둠. */}
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="Scenes" />
+        <meta property="og:image" content={_ogImageUrl} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:image" content={_ogImageUrl} />
         <Meta />
         <Links />
       </head>
