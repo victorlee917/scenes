@@ -1,10 +1,10 @@
 {
   "app": {
     "title": "Scenes",
-    "description": "Since you."
+    "description": "Our story, scene by scene."
   },
   "onboarding": {
-    "tagline": "Since you.",
+    "tagline": "Our story, scene by scene.",
     "downloadAppStore": "Download on the App Store",
     "downloadPlayStore": "Get it on Google Play",
     "playStoreComingSoon": "Coming soon to Google Play."

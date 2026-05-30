@@ -5,9 +5,9 @@ import { useOnboardingViewModel } from "../features/onboarding/use-onboarding-vi
 export function meta({}: Route.MetaArgs) {
   return [
     { title: "Scenes" },
-    { name: "description", content: "Since you." },
+    { name: "description", content: "Our story, scene by scene." },
     { property: "og:title", content: "Scenes" },
-    { property: "og:description", content: "Since you." },
+    { property: "og:description", content: "Our story, scene by scene." },
   ];
 }
 
