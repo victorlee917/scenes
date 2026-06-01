@@ -38,6 +38,17 @@ class ContentsForSceneViewModel
     );
   }
 
+  /// scene 내 모든 contents의 occurred_at을 한 번에 설정 — bulk 날짜 변경 후
+  /// in-memory state 동기화. RPC는 호출자가 별도로 실행.
+  void replaceAllOccurredAt(DateTime occurredAt) {
+    final current = state.valueOrNull ?? const <Content>[];
+    state = AsyncValue<List<Content>>.data(
+      current
+          .map((c) => c.copyWith(occurredAt: occurredAt))
+          .toList(growable: false),
+    );
+  }
+
   Future<void> refresh() async {
     state = const AsyncValue.loading();
     state = await AsyncValue.guard(() {

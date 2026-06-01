@@ -4,13 +4,11 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
-import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../l10n/app_localizations.dart';
-import '../couple/couple_view_model.dart';
-import '../couple/data/couple_repository.dart';
 import '../home/widgets/detail_app_bar.dart';
 import '../profile/account_deletion.dart';
+import 'disconnect_confirm_sheet.dart';
 
 /// 파트너 disconnect / 계정 삭제 등 되돌릴 수 없는 작업을 모아두는 화면.
 /// Settings의 Account 섹션에서 단일 'Danger zone' 진입점을 통해서만 도달.
@@ -61,24 +59,15 @@ class _DangerZoneScreenState extends ConsumerState<DangerZoneScreen> {
                       context: context,
                       title: l10n.disconnectConfirmTitle,
                       message: l10n.disconnectConfirmMessage,
+                      noticeText: l10n.disconnectConfirmNotice,
                       confirmLabel: l10n.disconnectConfirmAction,
                       isDestructive: true,
                     );
-                    if (!confirmed || !mounted) return;
-                    try {
-                      await ref
-                          .read(coupleRepositoryProvider)
-                          .disconnectCouple();
-                      if (!mounted) return;
-                      // activeCoupleProvider가 null이 되면 라우터의 redirect가
-                      // 자동으로 pairing 화면으로 이동시킴.
-                      await ref
-                          .read(activeCoupleProvider.notifier)
-                          .refresh();
-                    } catch (_) {
-                      if (!context.mounted) return;
-                      AppToast.show(context, l10n.disconnectFailedToast);
-                    }
+                    if (!confirmed) return;
+                    if (!context.mounted) return;
+                    // 첫 confirm 통과 후 타이핑 서명 시트. 실 실행/에러 처리는
+                    // 시트 내부에서.
+                    await DisconnectConfirmSheet.show(context);
                   },
                 ),
                 _DangerTile(

@@ -26,7 +26,12 @@ type MapboxFeature = {
   context?: Array<{
     id: string;        // e.g., 'place.123', 'region.456', 'country.789'
     text: string;
+    // language-specific 번역(예: text_en, text_ko)이 함께 내려옴.
+    [key: string]: string | undefined;
   }>;
+  // language-specific field: 같은 feature에 대해 Mapbox가 자동으로 추가해 줌.
+  // 예: language=en이면 text_en/place_name_en가 같이 옴.
+  [key: string]: unknown;
 };
 
 type MapboxResp = { features: MapboxFeature[] };
@@ -92,35 +97,60 @@ Deno.serve(async (req) => {
   }
 
   const data = (await resp.json()) as MapboxResp;
-  const results: Hit[] = (data.features ?? []).map(normalize);
+  // 응답을 원하는 언어로 재해석. query가 ko/en/ja 등 어떤 script로 들어와도
+  // language preference 첫 번째에 맞춘 text를 반환 — Mapbox v5는 query 언어
+  // 매치를 우선해서 `text`에 그 언어를 그대로 박는 경향이 있어, language-
+  // specific 필드(text_en, place_name_en 등)를 강제로 읽음.
+  const primaryLang = language.split(",")[0]; // 'en' 또는 'ko'
+  const results: Hit[] = (data.features ?? []).map((f) =>
+    normalize(f, primaryLang)
+  );
 
   return json({ results });
 });
 
-function normalize(f: MapboxFeature): Hit {
+function normalize(f: MapboxFeature, lang: string): Hit {
+  // language-specific 필드가 있으면 우선. 없으면 일반 text/place_name fallback.
+  const textKey = `text_${lang}`;
+  const placeNameKey = `place_name_${lang}`;
+  const localizedText = (f as Record<string, unknown>)[textKey];
+  const localizedPlaceName = (f as Record<string, unknown>)[placeNameKey];
+  const name = typeof localizedText === "string" && localizedText.length > 0
+    ? localizedText
+    : f.text;
+  const fullAddress =
+    typeof localizedPlaceName === "string" && localizedPlaceName.length > 0
+      ? localizedPlaceName
+      : f.place_name;
+
   // context 배열에서 region (place/region) + country 추출.
-  // Mapbox context id 포맷: '<type>.<id>' — type만 있음.
+  // Mapbox context id 포맷: '<type>.<id>' — type만 있음. context 각 항목도
+  // text_<lang> 번역을 가질 수 있으므로 동일하게 우선.
   let region: string | null = null;
   let country: string | null = null;
   for (const c of f.context ?? []) {
     const type = c.id.split(".")[0];
+    const localized = c[textKey];
+    const ctxText = typeof localized === "string" && localized.length > 0
+      ? localized
+      : c.text;
     if (type === "country") {
-      country = c.text;
+      country = ctxText;
     } else if (
       type === "region" || type === "place" || type === "district"
     ) {
       // 가장 작은 단위(place > district > region)를 우선.
       // place가 먼저 들어왔으면 그걸 유지, 아니면 그 다음 단계로.
-      if (region === null) region = c.text;
+      if (region === null) region = ctxText;
     }
   }
 
   return {
     id: f.id,
-    name: f.text,
+    name,
     region,
     country,
-    full_address: f.place_name,
+    full_address: fullAddress,
     lat: f.center[1],
     lng: f.center[0],
   };

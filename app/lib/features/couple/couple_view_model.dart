@@ -13,6 +13,7 @@ class ActiveCoupleViewModel
   StreamSubscription<void>? _coupleUpdateSub;
   StreamSubscription<void>? _partnerProfileSub;
   String? _watchedPartnerId;
+  StreamSubscription<void>? _coupleDeleteSub;
 
   @override
   Future<ActiveCoupleAndPartner?> build() async {
@@ -24,14 +25,24 @@ class ActiveCoupleViewModel
     // couples UPDATE 구독 — since_date / status 전이를 양쪽 클라 동기화.
     _coupleUpdateSub?.cancel();
     _coupleUpdateSub = null;
+    _coupleDeleteSub?.cancel();
+    _coupleDeleteSub = null;
     if (userId != null) {
       _coupleUpdateSub = ref
           .read(coupleRepositoryProvider)
           .watchActiveCoupleUpdates()
           .listen((_) => refresh());
+      // DELETE도 별도 구독 — 상대 탈퇴 시 couples row hard delete라 UPDATE
+      // 이벤트로는 못 잡힘. refresh 시 active couple null → 라우터가 pairing
+      // 으로 redirect.
+      _coupleDeleteSub = ref
+          .read(coupleRepositoryProvider)
+          .watchActiveCoupleDeletes()
+          .listen((_) => refresh());
     }
     ref.onDispose(() {
       _coupleUpdateSub?.cancel();
+      _coupleDeleteSub?.cancel();
       _partnerProfileSub?.cancel();
     });
 

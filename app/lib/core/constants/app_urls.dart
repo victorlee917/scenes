@@ -15,4 +15,10 @@ class AppUrls {
   /// Scenes 인스타그램 계정.
   static const String instagram =
       'https://www.instagram.com/scenessinceyou';
+
+  /// 앱 다운로드 — App Store 직링크. 초대 메시지에 포함.
+  /// 국가 코드(`/us/`)와 앱 슬러그를 빼고 `/app/id<id>`만 두면 Apple이 방문자
+  /// 지역 스토어로 자동 리다이렉트(US 고정 방지).
+  static const String appDownload =
+      'https://apps.apple.com/app/id6767381832';
 }

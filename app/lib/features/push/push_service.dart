@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'data/notification_preferences_repository.dart';
@@ -38,8 +37,6 @@ class PushService {
   /// 권한 OK + 토큰 미등록일 때 등록 시도. 실패해도 락 안 걸림 → 다음 resume
   /// 등에서 재시도 가능.
   Future<void> ensureRegistered() async {
-    await _log('ensureRegistered_start',
-        status: _tokenSaved ? 'skip_token_saved' : null);
     if (_tokenSaved) return;
     final pending = _inflight;
     if (pending != null) return pending;
@@ -49,13 +46,11 @@ class PushService {
       try {
         final settings = await fcm.getNotificationSettings();
         final auth = settings.authorizationStatus;
-        await _log('perm_check', status: auth.toString());
         final authorized = auth == AuthorizationStatus.authorized ||
             auth == AuthorizationStatus.provisional;
         if (!authorized) return;
         await _registerTokenAndPrefs(fcm);
       } catch (e) {
-        await _log('ensureRegistered_error', detail: e.toString());
         debugPrint('PushService ensureRegistered failed: $e');
       }
     }();
@@ -92,60 +87,42 @@ class PushService {
     try {
       await _prefsRepo.initializeIfMissing(allOn: true);
     } catch (e) {
-      await _log('prefs_init_error', detail: e.toString());
       debugPrint('PushService prefs init failed: $e');
     }
 
     if (Platform.isIOS) {
       // iOS: APNs token attach 후에야 FCM token 발급 가능. 첫 launch 시 즉시
       // 호출하면 null이 떨어지는 케이스가 흔해서 최대 5초 폴링.
-      await _log('apns_poll_start');
       String? apns;
       for (var i = 0; i < 10; i++) {
         try {
           apns = await fcm.getAPNSToken();
-        } catch (e) {
-          await _log('apns_throw', detail: e.toString());
+        } catch (_) {
           apns = null;
         }
         if (apns != null) break;
         await Future<void>.delayed(const Duration(milliseconds: 500));
       }
       if (apns == null) {
-        // AppDelegate가 등록 실패 시 UserDefaults에 native 에러를 적어둠.
-        // shared_preferences가 iOS에서 'flutter.' prefix를 붙이므로 같은 키.
-        String? nativeErr;
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          nativeErr = prefs.getString('lastAPNSRegisterError');
-        } catch (_) {}
-        await _log('apns_null',
-            status: 'abort', detail: nativeErr ?? 'no native error captured');
         debugPrint(
           'PushService: APNs token still null after 5s — abort, will retry on next resume',
         );
         return;
       }
-      await _log('apns_ok',
-          detail: apns.length > 16 ? apns.substring(0, 16) : apns);
     }
 
     String? token;
     try {
       token = await fcm.getToken();
     } catch (e) {
-      await _log('fcm_token_error', detail: e.toString());
       debugPrint('PushService getToken failed: $e');
     }
     if (token == null || token.isEmpty) {
-      await _log('fcm_token_null', status: 'abort');
       debugPrint(
         'PushService: FCM getToken returned null — will retry on next resume',
       );
       return;
     }
-    await _log('fcm_token_ok',
-        detail: token.length > 16 ? token.substring(0, 16) : token);
     await _saveToken(token);
     _tokenSaved = true;
 
@@ -158,10 +135,7 @@ class PushService {
 
   Future<void> _saveToken(String token) async {
     final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) {
-      await _log('save_skip', status: 'no_auth_user');
-      return;
-    }
+    if (userId == null) return;
     final platform = Platform.isIOS ? 'ios' : 'android';
     try {
       // 직접 upsert 대신 register_device_token RPC를 호출 — token이 다른
@@ -175,29 +149,8 @@ class PushService {
           'p_platform': platform,
         },
       );
-      await _log('save_ok');
     } catch (e) {
-      await _log('save_error', detail: e.toString());
       debugPrint('PushService save token failed: $e');
-    }
-  }
-
-  /// 임시 진단 로거. push_debug_log 테이블에 단계별 상태 기록.
-  /// 진단 끝나면 호출 모두 + 테이블 모두 제거.
-  Future<void> _log(String step, {String? status, String? detail}) async {
-    // 진단용 계측 — release 빌드에선 push_debug_log 쓰기를 건너뛴다.
-    if (!kDebugMode) return;
-    try {
-      final row = <String, dynamic>{
-        'user_id': _supabase.auth.currentUser?.id,
-        'step': step,
-      };
-      if (status != null) row['status'] = status;
-      if (detail != null) row['detail'] = detail;
-      // ignore: use_null_aware_elements
-      await _supabase.from('push_debug_log').insert(row);
-    } catch (_) {
-      // 진단용이라 실패해도 무시.
     }
   }
 

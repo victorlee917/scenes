@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 import '../../l10n/app_localizations.dart';
 import '../theme/app_colors_ext.dart';
@@ -11,6 +12,7 @@ class ConfirmDialog extends StatelessWidget {
     super.key,
     required this.title,
     this.message,
+    this.noticeText,
     required this.confirmLabel,
     this.cancelLabel,
     this.isDestructive = false,
@@ -18,6 +20,11 @@ class ConfirmDialog extends StatelessWidget {
 
   final String title;
   final String? message;
+
+  /// 메시지 아래에 info 아이콘 + muted body 톤의 안내 박스를 추가. 데이터
+  /// 보존 정책처럼 사용자가 액션 직전에 인지해야 할 내용을 전달할 때 사용.
+  final String? noticeText;
+
   final String confirmLabel;
   // null이면 빌드 시 l10n.commonCancel("Cancel"/"취소")로 fallback. 호출부가
   // 매번 "Cancel"을 박지 않아도 로케일 따라 자동 번역됨.
@@ -28,6 +35,7 @@ class ConfirmDialog extends StatelessWidget {
     required BuildContext context,
     required String title,
     String? message,
+    String? noticeText,
     required String confirmLabel,
     String? cancelLabel,
     bool isDestructive = false,
@@ -39,6 +47,7 @@ class ConfirmDialog extends StatelessWidget {
       builder: (_) => ConfirmDialog(
         title: title,
         message: message,
+        noticeText: noticeText,
         confirmLabel: confirmLabel,
         cancelLabel: cancelLabel,
         isDestructive: isDestructive,
@@ -81,6 +90,44 @@ class ConfirmDialog extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: AppTypography.body(14).copyWith(
                     color: context.colors.foregroundMuted,
+                  ),
+                ),
+              ),
+            ],
+            if (noticeText != null) ...[
+              const SizedBox(height: 16),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: context.colors.foreground.withValues(alpha: 0.04),
+                    borderRadius: AppRadii.mdBorder,
+                    border: Border.all(
+                      color: context.colors.foreground.withValues(alpha: 0.06),
+                      width: 0.5,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      FaIcon(
+                        FontAwesomeIcons.circleInfo,
+                        size: 13,
+                        color: context.colors.foregroundMuted,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          noticeText!,
+                          style: AppTypography.body(12).copyWith(
+                            color: context.colors.foregroundMuted,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),

@@ -138,16 +138,12 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
               itemCount: _editableScenes.length,
               itemBuilder: (context, index) {
                     final scene = _editableScenes[index];
-                    // 타일 어디든 누르고 드래그하면 reorder. 작은 핸들 아이콘은
-                    // 단순 시각 힌트로 남기고 드래그 영역은 타일 전체.
-                    return ReorderableDragStartListener(
+                    return _SceneListTile(
                       key: ValueKey(scene.id),
-                      index: index,
-                      child: _SceneListTile(
-                        scene: scene,
-                        onTap: () {},
-                        showDragHandle: true,
-                      ),
+                      scene: scene,
+                      onTap: () {},
+                      showDragHandle: true,
+                      reorderIndex: index,
                     );
                   },
                 )
@@ -275,16 +271,21 @@ class _SceneListScreenState extends ConsumerState<SceneListScreen> {
 
 class _SceneListTile extends StatelessWidget {
   const _SceneListTile({
+    super.key,
     required this.scene,
     required this.onTap,
     this.onLongPress,
     this.showDragHandle = false,
+    this.reorderIndex,
   });
 
   final Scene scene;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
   final bool showDragHandle;
+  // edit 모드 진입 시 ReorderableListView의 index. 좌측 영역은 long-press →
+  // reorder, 우측 grip 핸들은 즉시 reorder로 분리해 vertical scroll이 가능.
+  final int? reorderIndex;
 
   static const double _thumbSize = 56;
 
@@ -292,10 +293,112 @@ class _SceneListTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final locale = Localizations.localeOf(context);
     final localeTag = locale.toLanguageTag();
-    // 날짜는 콘텐츠 있을 때만 노출. TODO: contents의 min/max occurred_at에서 계산.
+    // 날짜는 콘텐츠 있을 때만 노출.
     final dateLine = scene.media.total > 0
         ? formatSceneDateRange(scene.dates, localeTag)
         : '';
+
+    final thumb = ClipOval(
+      child: SizedBox(
+        width: _thumbSize,
+        height: _thumbSize,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (scene.coverImageUrl.isEmpty)
+              SceneTitleFallback(title: scene.title)
+            else
+              Image.network(
+                scene.coverImageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) =>
+                    SceneTitleFallback(title: scene.title),
+              ),
+            Container(color: Colors.black.withValues(alpha: 0.4)),
+            Align(
+              alignment: const Alignment(0, -0.12),
+              child: Text(
+                '#${scene.number}',
+                style: AppTypography.display(16).copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 1.0,
+                  height: 1.0,
+                  leadingDistribution: TextLeadingDistribution.even,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final titleColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          scene.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTypography.body(15, weight: FontWeight.w500)
+              .copyWith(color: context.colors.foreground),
+        ),
+        if (dateLine.isNotEmpty) ...[
+          const SizedBox(height: 3),
+          Text(
+            dateLine,
+            style: AppTypography.body(12).copyWith(
+              color: context.colors.foregroundMuted,
+            ),
+          ),
+        ],
+      ],
+    );
+
+    if (reorderIndex != null) {
+      // edit 모드: 좌측 영역(thumb+title)은 long-press로만 드래그 시작. 그래야
+      // 좌측에서 손가락을 위/아래로 끌면 ReorderableListView가 vertical scroll
+      // 한다. 우측 grip 아이콘은 즉시 드래그 — 빠른 reorder용.
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: ReorderableDelayedDragStartListener(
+                index: reorderIndex!,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  child: Row(
+                    children: [
+                      thumb,
+                      const SizedBox(width: 14),
+                      Expanded(child: titleColumn),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            ReorderableDragStartListener(
+              index: reorderIndex!,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: Center(
+                    child: Icon(
+                      Icons.drag_handle,
+                      size: 20,
+                      color: context.colors.foregroundMuted,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -305,72 +408,10 @@ class _SceneListTile extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         child: Row(
           children: [
-            // 대표 이미지 + 씬 넘버 오버레이
-            ClipOval(
-              child: SizedBox(
-                width: _thumbSize,
-                height: _thumbSize,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (scene.coverImageUrl.isEmpty)
-                      SceneTitleFallback(title: scene.title)
-                    else
-                      Image.network(
-                        scene.coverImageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            SceneTitleFallback(title: scene.title),
-                      ),
-                    Container(
-                      color: Colors.black.withValues(alpha: 0.4),
-                    ),
-                    Align(
-                      alignment: const Alignment(0, -0.12),
-                      child: Text(
-                        '#${scene.number}',
-                        style: AppTypography.display(16).copyWith(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 1.0,
-                          height: 1.0,
-                          leadingDistribution:
-                              TextLeadingDistribution.even,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            thumb,
             const SizedBox(width: 14),
-            // 타이틀 + 날짜
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    scene.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTypography.body(15, weight: FontWeight.w500)
-                        .copyWith(color: context.colors.foreground),
-                  ),
-                  if (dateLine.isNotEmpty) ...[
-                    const SizedBox(height: 3),
-                    Text(
-                      dateLine,
-                      style: AppTypography.body(12).copyWith(
-                        color: context.colors.foregroundMuted,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
+            Expanded(child: titleColumn),
             if (showDragHandle)
-              // 시각 힌트만 — 실제 드래그 트리거는 부모의
-              // ReorderableDragStartListener가 타일 전체에 걸려 있음.
               Padding(
                 padding: const EdgeInsets.only(left: 12),
                 child: Icon(

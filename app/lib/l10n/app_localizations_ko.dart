@@ -64,7 +64,20 @@ class AppLocalizationsKo extends AppLocalizations {
   String get sceneListSave => '저장';
 
   @override
-  String get sceneDetailEdit => '편집';
+  String get sceneDetailEdit => 'Scene 편집';
+
+  @override
+  String get sceneDetailEditDate => '날짜 편집';
+
+  @override
+  String get sceneDetailEditDateSheetTitle => '날짜 편집';
+
+  @override
+  String get sceneDetailEditDateSheetInfo =>
+      '이 Scene의 모든 Moment 날짜를 한 번에 설정합니다.';
+
+  @override
+  String get sceneDetailEditDateFailedToast => '날짜 변경에 실패했어요.';
 
   @override
   String get actionDelete => '삭제';
@@ -442,6 +455,12 @@ class AppLocalizationsKo extends AppLocalizations {
   String get placePickerAppleAttribution => 'Apple 지도 검색';
 
   @override
+  String get placePickerScopeDomestic => '국내';
+
+  @override
+  String get placePickerScopeOverseas => '해외';
+
+  @override
   String get onboardingGetStarted => '시작하기';
 
   @override
@@ -486,7 +505,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get profileSetupSaveFailedToast => '프로필 저장에 실패했어요.';
 
   @override
-  String get pairingTagline => '초대 코드를 공유하거나\n파트너의 코드를 입력해 페어링하세요.';
+  String get pairingTagline => '초대 코드를 공유하거나\n파트너의 코드를 입력해 연결하세요.';
 
   @override
   String get pairingYourInviteCode => '내 초대 코드';
@@ -504,18 +523,18 @@ class AppLocalizationsKo extends AppLocalizations {
   String get pairingEnterCodeHint => '파트너의 코드';
 
   @override
-  String get pairingEnterCodeAction => '페어링';
+  String get pairingEnterCodeAction => '연결';
 
   @override
   String get pairingCodeCopiedToast => '코드 복사됨';
 
   @override
-  String pairingShareMessage(String code) {
-    return 'Scenes에 함께해요! 초대 코드: $code';
+  String pairingShareMessage(String link, String code) {
+    return '우리의 장면을 함께 모아요, Scenes에서 💞\n\n앱 다운로드 → $link\n초대 코드: $code';
   }
 
   @override
-  String get pairingFailedToast => '페어링에 실패했어요. 다시 시도해 주세요.';
+  String get pairingFailedToast => '연결에 실패했어요. 다시 시도해 주세요.';
 
   @override
   String get pairingErrorInvalidCode => '유효하지 않은 코드예요.';
@@ -533,7 +552,7 @@ class AppLocalizationsKo extends AppLocalizations {
   String get pairingErrorInviterUnavailable => '더 이상 사용할 수 없는 코드예요.';
 
   @override
-  String get pairingErrorAlreadyPaired => '이미 다른 사람과 페어링 되어 있어요.';
+  String get pairingErrorAlreadyPaired => '이미 다른 사람과 연결되어 있어요.';
 
   @override
   String get pairingCodeLoadError => '코드를 불러올 수 없어요. 다시 시도하려면 탭하세요.';
@@ -695,7 +714,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String subscriptionFooterTrialConversion(String price) {
-    return '7일 무료 체험이 끝나면 자동으로 월 $price 유료 구독으로 전환됩니다. 결제를 원치 않으시면 체험 종료 최소 24시간 전에 취소해 주세요.';
+    return '7일 무료 체험이 끝나면 자동으로 월 $price 유료 구독으로 전환됩니다.\n결제를 원치 않으시면 체험 종료 최소 24시간 전에 취소해 주세요.';
   }
 
   @override
@@ -792,6 +811,22 @@ class AppLocalizationsKo extends AppLocalizations {
   String get disconnectConfirmMessage => '두 사람의 연결이 해지됩니다.';
 
   @override
+  String get disconnectConfirmNotice =>
+      '관계에 속한 모든 데이터(scene·사진·영화·음악·장소·리액션 등)는 6개월 뒤 영구 삭제돼요.';
+
+  @override
+  String get disconnectSignTitle => '마지막 확인';
+
+  @override
+  String get disconnectSignHeading => 'UNPAIR를 입력해 연결 해지를 확인해 주세요.';
+
+  @override
+  String get disconnectSignPhrase => 'UNPAIR';
+
+  @override
+  String get disconnectSignInputHint => 'UNPAIR 입력';
+
+  @override
   String get disconnectConfirmAction => '연결 해지';
 
   @override
@@ -802,6 +837,28 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get deleteAccountConfirmMessage => '계정 삭제는 되돌릴 수 없습니다.';
+
+  @override
+  String get deleteAccountConfirmNotice =>
+      '계정과 관계에 속한 모든 데이터(scene·사진·영화·음악·장소·리액션 등)가 즉시 영구 삭제돼요. 파트너도 접근할 수 없게 돼요.';
+
+  @override
+  String get deleteAccountSignTitle => '마지막 확인';
+
+  @override
+  String get deleteAccountSignHeading => 'DELETE를 입력해 영구 탈퇴를 확인해 주세요.';
+
+  @override
+  String get deleteAccountSignPhrase => 'DELETE';
+
+  @override
+  String get deleteAccountSignInputHint => 'DELETE 입력';
+
+  @override
+  String get deleteAccountSignAction => '영구 삭제';
+
+  @override
+  String get deleteAccountSignDeleting => '삭제 중…';
 
   @override
   String get deleteAccountConfirmAction => '계정 삭제';
@@ -902,7 +959,7 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get lockForgotConfirmBody =>
-      '로그아웃하면 앱 잠금이 꺼져요. 다시 로그인 후 설정에서 다시 설정해야 해요.';
+      '로그아웃하면 앱 잠금이 꺼져요.\n다시 로그인 후 설정에서 다시 설정해야 해요.';
 
   @override
   String get lockForgotConfirmAction => '로그아웃';

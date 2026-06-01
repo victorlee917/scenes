@@ -2,8 +2,10 @@ import 'dart:io';
 
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../main.dart' show supabaseUrl;
 import '../models/profile.dart';
 
 /// 현재 로그인 유저의 profile 행을 읽고/수정하는 Repository.
@@ -100,6 +102,34 @@ class ProfileRepository {
     await _client.from('profiles').update({
       'deleted_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', id);
+  }
+
+  /// 즉시 hard delete — service_role Edge Function `delete-account`이
+  /// 사용자가 속한 모든 pair_id 데이터(scenes/contents/reactions/storage)와
+  /// profile, auth.users까지 삭제. 호출 성공 후 client는 signOut + 정리.
+  ///
+  /// 클라이언트 직접 삭제 불가:
+  ///   - auth.users는 admin 권한 필요
+  ///   - pair_id 데이터는 partner 측 RLS도 영향 — service_role로 일괄 처리
+  Future<void> deleteAccount() async {
+    final session = _client.auth.currentSession;
+    final accessToken = session?.accessToken;
+    if (accessToken == null) {
+      throw StateError('Not signed in.');
+    }
+    final url = Uri.parse('$supabaseUrl/functions/v1/delete-account');
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+    );
+    if (response.statusCode != 200) {
+      throw StateError(
+        'delete-account ${response.statusCode}: ${response.body}',
+      );
+    }
   }
 
   /// 프로필 이미지를 업로드하고 public URL 반환.

@@ -2158,9 +2158,10 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
         : widget.initialIndex.clamp(0, widget.frames.length - 1);
     _timer = Timer.periodic(_cyclePeriod, (_) {
       if (!mounted || widget.frames.length <= 1) return;
-      // 슬라이드쇼 페이지(현재 순서에서 page 2)가 보일 때만 인덱스 진행 —
-      // 포커싱 안 된 템플릿은 백그라운드로 돌지 않게.
-      if (_previewPage != 2) return;
+      // 슬라이드쇼 페이지(page 3)가 보일 때만 인덱스 진행 — 포커싱 안 된
+      // 템플릿은 백그라운드로 돌지 않게. (0=ContactSheet, 1=Snake, 2=Stack,
+      // 3=Slideshow 순서. 옛 코드는 page 2였는데 Stack이 끼면서 한 칸 밀림.)
+      if (_previewPage != 3) return;
       setState(() {
         _index = (_index + 1) % widget.frames.length;
       });

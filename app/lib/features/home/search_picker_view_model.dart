@@ -80,6 +80,17 @@ abstract class SearchPickerViewModel<T>
     });
   }
 
+  /// 입력어는 그대로 두고 현재 [SearchPickerState.query]를 즉시 재검색한다.
+  /// 검색 소스(모드)가 바뀌어 같은 단어를 다른 소스로 다시 조회해야 할 때
+  /// 호출 — 디바운스 없이 바로 실행한다.
+  void rerun({required String locale}) {
+    _debounceTimer?.cancel();
+    final trimmed = state.query.trim();
+    if (trimmed.isEmpty) return;
+    // ignore: discarded_futures
+    _runSearch(trimmed, locale: locale);
+  }
+
   Future<void> _runSearch(String query, {required String locale}) async {
     final seq = ++_requestSeq;
     state = state.copyWith(isLoading: true, error: null);

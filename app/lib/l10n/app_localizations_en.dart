@@ -64,7 +64,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sceneListSave => 'Save';
 
   @override
-  String get sceneDetailEdit => 'Edit';
+  String get sceneDetailEdit => 'Edit scene';
+
+  @override
+  String get sceneDetailEditDate => 'Edit date';
+
+  @override
+  String get sceneDetailEditDateSheetTitle => 'Edit date';
+
+  @override
+  String get sceneDetailEditDateSheetInfo =>
+      'Sets the date for every moment in this scene.';
+
+  @override
+  String get sceneDetailEditDateFailedToast => 'Failed to update dates.';
 
   @override
   String get actionDelete => 'Delete';
@@ -450,6 +463,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get placePickerAppleAttribution => 'Search by Apple Maps';
 
   @override
+  String get placePickerScopeDomestic => 'Korea';
+
+  @override
+  String get placePickerScopeOverseas => 'Overseas';
+
+  @override
   String get onboardingGetStarted => 'Get Started';
 
   @override
@@ -521,8 +540,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pairingCodeCopiedToast => 'Code copied';
 
   @override
-  String pairingShareMessage(String code) {
-    return 'Join me on Scenes! Use my invite code: $code';
+  String pairingShareMessage(String link, String code) {
+    return 'Let\'s collect our scenes together on Scenes 💞\n\nDownload the app → $link\nInvite code: $code';
   }
 
   @override
@@ -820,6 +839,22 @@ class AppLocalizationsEn extends AppLocalizations {
       'You and your person will be unpaired.';
 
   @override
+  String get disconnectConfirmNotice =>
+      'All data tied to this relationship (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted 6 months later.';
+
+  @override
+  String get disconnectSignTitle => 'Final check';
+
+  @override
+  String get disconnectSignHeading => 'Type UNPAIR to confirm the disconnect.';
+
+  @override
+  String get disconnectSignPhrase => 'UNPAIR';
+
+  @override
+  String get disconnectSignInputHint => 'Type UNPAIR';
+
+  @override
   String get disconnectConfirmAction => 'Disconnect';
 
   @override
@@ -830,6 +865,29 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get deleteAccountConfirmMessage => 'This cannot be undone.';
+
+  @override
+  String get deleteAccountConfirmNotice =>
+      'Your account and all relationship data (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted right away. Your partner will lose access too.';
+
+  @override
+  String get deleteAccountSignTitle => 'Final check';
+
+  @override
+  String get deleteAccountSignHeading =>
+      'Type DELETE to permanently remove your account.';
+
+  @override
+  String get deleteAccountSignPhrase => 'DELETE';
+
+  @override
+  String get deleteAccountSignInputHint => 'Type DELETE';
+
+  @override
+  String get deleteAccountSignAction => 'Delete forever';
+
+  @override
+  String get deleteAccountSignDeleting => 'Deleting…';
 
   @override
   String get deleteAccountConfirmAction => 'Delete';
@@ -932,7 +990,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get lockForgotConfirmBody =>
-      'Signing out will turn off App Lock. After signing in again, you\'ll need to set it up from Settings.';
+      'Signing out will turn off App Lock.\nAfter signing in again, you\'ll need to set it up from Settings.';
 
   @override
   String get lockForgotConfirmAction => 'Sign Out';

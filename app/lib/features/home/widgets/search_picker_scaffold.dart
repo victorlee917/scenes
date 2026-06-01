@@ -55,6 +55,7 @@ class SearchPickerScaffold<T> extends StatefulWidget {
     required this.idOf,
     required this.itemBuilder,
     required this.onSave,
+    this.modeSelector,
   });
 
   /// 앱바 타이틀.
@@ -92,6 +93,10 @@ class SearchPickerScaffold<T> extends StatefulWidget {
 
   /// 저장 버튼 탭 시 선택된 항목과 함께 호출.
   final ValueChanged<T> onSave;
+
+  /// 검색창과 결과 리스트 사이에 끼우는 옵셔널 위젯(예: 장소 picker의
+  /// 국내/해외 토글). null이면 영화·음악 picker처럼 아무것도 렌더하지 않는다.
+  final Widget? modeSelector;
 
   @override
   State<SearchPickerScaffold<T>> createState() =>
@@ -228,6 +233,9 @@ class _SearchPickerScaffoldState<T> extends State<SearchPickerScaffold<T>> {
                 ),
               ),
 
+              // 국내/해외 등 검색 모드 토글(주입된 경우에만).
+              if (widget.modeSelector != null) widget.modeSelector!,
+
               // 검색 결과
               Expanded(
                 child: ShaderMask(
@@ -290,7 +298,10 @@ class _SearchPickerScaffoldState<T> extends State<SearchPickerScaffold<T>> {
   }
 
   Widget _buildResultsBody(EdgeInsets padding) {
-    if (widget.isLoading) {
+    // 이미 결과가 있는 상태의 재검색(모드 전환·추가 타이핑 등)에서는 리스트를
+    // 스피너로 비우지 않고 그대로 유지한다 — 새 결과가 도착하면 교체. 매번
+    // 깜빡이는 것을 막는다. 첫 검색(결과 없음)일 때만 스피너를 보여준다.
+    if (widget.isLoading && widget.results.isEmpty) {
       return Center(
         child: CircularProgressIndicator(
           color: context.colors.foreground,

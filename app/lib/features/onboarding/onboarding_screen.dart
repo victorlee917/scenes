@@ -522,7 +522,9 @@ class _AgreementTile extends StatelessWidget {
         child: Row(
           children: [
             FaIcon(
-              checked ? FontAwesomeIcons.circleCheck : FontAwesomeIcons.circle,
+              checked
+                  ? FontAwesomeIcons.solidCircleCheck
+                  : FontAwesomeIcons.circle,
               size: 16,
               color: checked
                   ? context.colors.foreground

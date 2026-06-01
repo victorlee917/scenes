@@ -7,6 +7,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/constants/app_urls.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
@@ -81,7 +82,8 @@ class _PairingScreenState extends ConsumerState<PairingScreen> {
   void _shareCode(String code) {
     SharePlus.instance.share(
       ShareParams(
-        text: AppLocalizations.of(context).pairingShareMessage(code),
+        text: AppLocalizations.of(context)
+            .pairingShareMessage(AppUrls.appDownload, code),
       ),
     );
   }
@@ -621,10 +623,21 @@ class _EnterCodeSheetState extends State<_EnterCodeSheet> {
               autofocus: true,
               textAlign: TextAlign.center,
               textCapitalization: TextCapitalization.characters,
+              // 키보드 자동완성/오탈자 체크 비활성 — 고정 phrase 입력에 방해됨.
+              autocorrect: false,
+              enableSuggestions: false,
               // 발급 코드 길이는 6자 고정. 그 이상 못 치도록 inputFormatter로
-              // 차단(maxLength는 카운터 노출돼서 회피).
+              // 차단(maxLength는 카운터 노출돼서 회피). 추가로 소문자 입력
+              // (paste / 하드웨어 키보드 / textCapitalization 미준수 케이스)
+              // 도 즉시 대문자로 변환 — 발급 코드는 모두 대문자라 매칭 일관성.
               inputFormatters: [
                 LengthLimitingTextInputFormatter(6),
+                TextInputFormatter.withFunction((oldValue, newValue) {
+                  return TextEditingValue(
+                    text: newValue.text.toUpperCase(),
+                    selection: newValue.selection,
+                  );
+                }),
               ],
               style: AppTypography.body(15, weight: FontWeight.w600).copyWith(
                 color: context.colors.foreground,

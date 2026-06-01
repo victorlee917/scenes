@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 
 import '../profile/profile_view_model.dart';
 import 'data/purchases_repository.dart';
@@ -86,13 +87,15 @@ class PurchasesViewModel extends AutoDisposeNotifier<PurchasesActionState> {
       }
       state = state.copyWith(isBusy: false, error: null);
       return hasHd ? PurchaseOutcome.purchased : PurchaseOutcome.error;
-    } catch (e) {
+    } catch (e, st) {
       if (repo.isPurchaseCancelled(e)) {
         _log('purchaseMonthly: cancelled');
         state = state.copyWith(isBusy: false, error: null);
         return PurchaseOutcome.cancelled;
       }
       _log('purchaseMonthly: error $e');
+      // ignore: discarded_futures
+      Sentry.captureException(e, stackTrace: st);
       state = state.copyWith(isBusy: false, error: PurchasesErrorCode.generic);
       return PurchaseOutcome.error;
     }
@@ -111,24 +114,12 @@ class PurchasesViewModel extends AutoDisposeNotifier<PurchasesActionState> {
       _invalidateSubscriptionState();
       state = state.copyWith(isBusy: false, error: null);
       return hasHd;
-    } catch (e) {
+    } catch (e, st) {
       _log('restorePurchases: error $e');
+      // ignore: discarded_futures
+      Sentry.captureException(e, stackTrace: st);
       state = state.copyWith(isBusy: false, error: PurchasesErrorCode.generic);
       return false;
-    }
-  }
-
-  /// 가입자용 관리 UI. 환불 안내·만료일·변경 등을 사용자가 직접 처리.
-  Future<void> openCustomerCenter() async {
-    _log('openCustomerCenter: open');
-    try {
-      await ref.read(purchasesRepositoryProvider).presentCustomerCenter();
-      _log('openCustomerCenter: closed, refreshing state');
-      // Customer Center 종료 후에도 상태 변화 가능(예: 취소 직후) — 재평가.
-      _invalidateSubscriptionState();
-    } catch (e) {
-      _log('openCustomerCenter: error $e');
-      state = state.copyWith(error: PurchasesErrorCode.generic);
     }
   }
 

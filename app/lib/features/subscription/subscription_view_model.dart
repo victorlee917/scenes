@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../couple/couple_view_model.dart';
 import '../profile/profile_view_model.dart';
 import 'data/purchases_repository.dart';
+import 'debug_subscription_override.dart';
 
 /// Scenes HD 구독 상태.
 ///
@@ -46,6 +47,13 @@ class SubscriptionState {
 class SubscriptionViewModel extends AsyncNotifier<SubscriptionState> {
   @override
   Future<SubscriptionState> build() async {
+    // 디버그 오버라이드: 지정 테스트 계정에서 "강제 HD"가 켜져 있으면 실제
+    // RC/DB 상태와 무관하게 HD로 간주. 시뮬레이터 IAP 불가 우회용.
+    if (canUseDebugSubscriptionToggle() &&
+        (ref.watch(debugForceHdProvider).valueOrNull ?? false)) {
+      return const SubscriptionState(isSubscribed: true, subscribedBySelf: true);
+    }
+
     final profile = ref.watch(myProfileProvider).valueOrNull;
     final pairId = ref.watch(myActivePairIdProvider);
     // RC CustomerInfo도 watch — 결제/복구 직후 RC SDK가 즉시 푸시하므로

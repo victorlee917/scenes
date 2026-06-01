@@ -1,7 +1,9 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:shimmer/shimmer.dart';
 
@@ -12,6 +14,8 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/floating_action_sheet.dart';
+import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../content/data/content_repository.dart';
 import '../../content/contents_view_model.dart';
 import '../../content/models/content.dart';
 import '../../content/models/reaction.dart';
@@ -266,7 +270,10 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
                             child: GestureDetector(
                               onTap: _openEditSheet,
                               behavior: HitTestBehavior.opaque,
-                              child: FocusedSceneInfo(scene: scene),
+                              child: FocusedSceneInfo(
+                                scene: scene,
+                                onDateTap: _openSceneDateSheet,
+                              ),
                             ),
                           ),
                         ),
@@ -404,6 +411,11 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
           badge: ref.read(isSubscribedProvider) ? null : 'HD',
           onTap: _handleEditOrder,
         ),
+        // Edit Date — scene 내 모든 contents의 occurred_at을 한 번에 변경.
+        FloatingActionItem(
+          label: l10n.sceneDetailEditDate,
+          onTap: _openSceneDateSheet,
+        ),
         if (canDelete)
           FloatingActionItem(
             label: l10n.actionDelete,
@@ -428,6 +440,71 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
             },
           ),
       ],
+    );
+  }
+
+  /// "Edit date" 메뉴 — scene 내 모든 contents의 occurred_at을 한 번에 설정
+  /// 하는 시트. 안내 텍스트로 "모든 Moment에 적용"임을 알리고, 확정 시 bulk
+  /// update + in-memory 상태 동기화.
+  void _openSceneDateSheet() {
+    final l10n = AppLocalizations.of(context);
+    // scene_summary 뷰가 contents의 max(occurred_at)을 latest_occurred_at으로
+    // 집계해 scene.dates 마지막 원소로 노출 → detail 상단 날짜 표기와 동일
+    // 값을 default로 채워, "이 Scene의 가장 최근 콘텐츠 날짜"가 그대로 보임.
+    // scenesProvider에서 fresh scene을 읽어 bulk edit 직후의 stale 값을 피함.
+    // dates가 비어 있으면(전 콘텐츠 occurred_at null) contents in-memory의
+    // occurred_at ?? createdAt 최댓값, 마지막 fallback은 today.
+    final freshScene =
+        ref.read(scenesProvider).valueOrNull?.firstWhere(
+              (s) => s.id == widget.scene.id,
+              orElse: () => widget.scene,
+            ) ??
+            widget.scene;
+    DateTime initial = DateTime.now();
+    if (freshScene.dates.isNotEmpty) {
+      initial = freshScene.dates.last;
+    } else {
+      final contents =
+          ref.read(contentsForSceneProvider(widget.scene.id)).valueOrNull ??
+          const <Content>[];
+      if (contents.isNotEmpty) {
+        final dates = contents
+            .map((c) => c.occurredAt ?? c.createdAt)
+            .toList(growable: false)
+          ..sort();
+        initial = dates.last;
+      }
+    }
+    FloatingBottomSheet.show<void>(
+      context: context,
+      builder: (_) => _SceneDateBulkSheet(
+        initialDate: initial,
+        infoText: l10n.sceneDetailEditDateSheetInfo,
+        title: l10n.sceneDetailEditDateSheetTitle,
+        onConfirm: (date) async {
+          Navigator.of(context).pop();
+          try {
+            await ref
+                .read(contentRepositoryProvider)
+                .updateOccurredAtForScene(widget.scene.id, date);
+            if (!mounted) return;
+            // 1) viewer/그리드용 contents — in-memory에서 모두 새 date로.
+            ref
+                .read(contentsForSceneProvider(widget.scene.id).notifier)
+                .replaceAllOccurredAt(date);
+            // 2) scene.dates는 scene_summary 뷰가 contents에서 집계 → 다시
+            //    fetch해야 detail 상단 날짜 표기도 갱신됨. invalidate는
+            //    isLoading 상태를 거쳐 home의 ready 게이트가 잠깐 SplashView로
+            //    빠지고 PageView가 unmount→remount되며 initialPage(가장 최신)
+            //    로 스냅되는 버그가 있어, loading 없이 silently 갱신.
+            // ignore: discarded_futures
+            ref.read(scenesProvider.notifier).softRefresh();
+          } catch (_) {
+            if (!mounted) return;
+            AppToast.show(context, l10n.sceneDetailEditDateFailedToast);
+          }
+        },
+      ),
     );
   }
 
@@ -572,12 +649,10 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
               ),
               itemBuilder: (context, index) {
                 final content = _editableContents[index];
-                // 타일 어디든 누르고 드래그하면 reorder — 우측 grip 아이콘
-                // 영역에 한정되지 않음. grip은 시각 힌트로만 유지.
-                return ReorderableDragStartListener(
+                return _ReorderTile(
                   key: ValueKey(content.id),
-                  index: index,
-                  child: _ReorderTile(content: content),
+                  content: content,
+                  reorderIndex: index,
                 );
               },
             ),
@@ -940,14 +1015,62 @@ class _GridReactionBadge extends ConsumerWidget {
 /// Reorder 모드용 단일 행 타일 — square thumbnail + drag handle. scene list
 /// reorder와 시각 일관 (단일 column, 우측 핸들).
 class _ReorderTile extends StatelessWidget {
-  const _ReorderTile({required this.content});
+  const _ReorderTile({
+    super.key,
+    required this.content,
+    required this.reorderIndex,
+  });
 
   final Content content;
+  // 좌측 영역(thumb+label)은 long-press → reorder, 우측 grip은 즉시 → reorder.
+  // 좌측이 long-press여야 vertical scroll이 가능.
+  final int reorderIndex;
 
   static const double _thumbSize = 56;
 
   @override
   Widget build(BuildContext context) {
+    final body = Row(
+      children: [
+        ClipRRect(
+          borderRadius: AppRadii.smBorder,
+          child: SizedBox(
+            width: _thumbSize,
+            height: _thumbSize,
+            child: ProgressivePhoto(
+              thumbUrl: content.thumbSignedUrl,
+              fullUrl: content.fullSignedUrl,
+            ),
+          ),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Text(
+            _typeLabel(content.type),
+            style: AppTypography.body(
+              14,
+              weight: FontWeight.w500,
+            ).copyWith(color: context.colors.foreground),
+          ),
+        ),
+      ],
+    );
+
+    final handle = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox(
+        width: 56,
+        height: 56,
+        child: Center(
+          child: FaIcon(
+            FontAwesomeIcons.gripLines,
+            size: 16,
+            color: context.colors.foregroundMuted,
+          ),
+        ),
+      ),
+    );
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Container(
@@ -962,39 +1085,18 @@ class _ReorderTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            ClipRRect(
-              borderRadius: AppRadii.smBorder,
-              child: SizedBox(
-                width: _thumbSize,
-                height: _thumbSize,
-                child: ProgressivePhoto(
-                  thumbUrl: content.thumbSignedUrl,
-                  fullUrl: content.fullSignedUrl,
-                ),
-              ),
-            ),
-            const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                _typeLabel(content.type),
-                style: AppTypography.body(
-                  14,
-                  weight: FontWeight.w500,
-                ).copyWith(color: context.colors.foreground),
-              ),
-            ),
-            // 시각 힌트만 — 실제 드래그 트리거는 부모 ReorderableDragStart
-            // Listener가 타일 전체에 걸려 있음.
-            SizedBox(
-              width: 32,
-              height: 32,
-              child: Center(
-                child: FaIcon(
-                  FontAwesomeIcons.gripLines,
-                  size: 16,
-                  color: context.colors.foregroundMuted,
+              child: ReorderableDelayedDragStartListener(
+                index: reorderIndex,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  child: body,
                 ),
               ),
+            ),
+            ReorderableDragStartListener(
+              index: reorderIndex,
+              child: handle,
             ),
           ],
         ),
@@ -1103,6 +1205,127 @@ class _DetailActionRow extends StatelessWidget {
             ),
           ),
         ],
+      ],
+    );
+  }
+}
+
+/// Scene 내 모든 Moment의 날짜를 일괄 변경하는 시트 본문. MomentDatePicker
+/// Sheet와 같은 패턴 + 상단 안내 텍스트가 다른 점.
+class _SceneDateBulkSheet extends StatefulWidget {
+  const _SceneDateBulkSheet({
+    required this.initialDate,
+    required this.infoText,
+    required this.title,
+    required this.onConfirm,
+  });
+
+  final DateTime initialDate;
+  final String infoText;
+  final String title;
+  final ValueChanged<DateTime> onConfirm;
+
+  @override
+  State<_SceneDateBulkSheet> createState() => _SceneDateBulkSheetState();
+}
+
+class _SceneDateBulkSheetState extends State<_SceneDateBulkSheet> {
+  late DateTime _selected;
+  late final DateTime _max;
+  static final DateTime _min = DateTime(2000);
+
+  @override
+  void initState() {
+    super.initState();
+    _max = DateTime.now();
+    final initialLocal = widget.initialDate.toLocal();
+    _selected = initialLocal.isAfter(_max) ? _max : initialLocal;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final locale = Localizations.localeOf(context).toLanguageTag();
+    final dateStr = DateFormat.yMMMMd(locale).format(_selected);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 8),
+        Text(
+          widget.title,
+          style: AppTypography.display(20).copyWith(
+            color: context.colors.foreground,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            widget.infoText,
+            textAlign: TextAlign.center,
+            style: AppTypography.body(12).copyWith(
+              color: context.colors.foregroundMuted,
+              height: 1.4,
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          dateStr,
+          style: AppTypography.body(14).copyWith(
+            color: context.colors.foreground,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 200,
+          child: CupertinoTheme(
+            data: CupertinoThemeData(
+              brightness: Theme.of(context).brightness,
+              textTheme: CupertinoTextThemeData(
+                dateTimePickerTextStyle: AppTypography.body(16).copyWith(
+                  color: context.colors.foreground,
+                ),
+              ),
+            ),
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.date,
+              initialDateTime: _selected,
+              maximumDate: _max,
+              minimumDate: _min,
+              onDateTimeChanged: (date) {
+                setState(() => _selected = date);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: SizedBox(
+            width: double.infinity,
+            child: GestureDetector(
+              onTap: () => widget.onConfirm(_selected),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: AppRadii.sheetInnerBorder,
+                  color: context.colors.foreground,
+                ),
+                child: Center(
+                  child: Text(
+                    l10n.datePickerConfirm,
+                    style: AppTypography.body(15, weight: FontWeight.w600)
+                        .copyWith(color: context.colors.background),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
       ],
     );
   }

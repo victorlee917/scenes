@@ -161,7 +161,10 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
   // 마키(복수 선택) 모드 진입까지의 long-press 시간. 기본 500ms는 길게
   // 느껴져 단축 — 일반 스크롤(즉시 이동)과는 여전히 구분된다. 너무 짧으면
   // 느린 탭이 선택 모드로 오인될 수 있어 200ms를 하한으로 본다.
-  static const Duration _kMarqueeLongPressDelay = Duration(milliseconds: 200);
+  // 스크롤 의도와 마키 의도 분리용. 너무 짧으면 손가락이 잠깐 머무는 사이에
+  // long-press가 arena를 잡아 의도치 않은 selection이 생김. Flutter 기본
+  // kLongPressTimeout(500ms)과의 절충점.
+  static const Duration _kMarqueeLongPressDelay = Duration(milliseconds: 400);
 
   @override
   void dispose() {
@@ -465,7 +468,13 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
       _currentAlbum = album;
       _loading = true;
     });
-    final assets = await album.getAssetListRange(start: 0, end: 200);
+    // 메타데이터만 미리 로드 — 실제 thumb 디코드는 grid가 visible cell에 대해
+    // lazy로 처리하므로, 앨범 전체 로드해도 첫 페인트 비용은 거의 동일.
+    // 큰 앨범(>5만장 등)을 위한 안전 cap 적용.
+    const safetyCap = 10000;
+    final total = await album.assetCountAsync;
+    final end = total > safetyCap ? safetyCap : total;
+    final assets = await album.getAssetListRange(start: 0, end: end);
     if (mounted) {
       setState(() {
         _assets = assets;

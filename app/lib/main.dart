@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:developer' as developer;
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -12,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/locale/locale_provider.dart';
@@ -19,6 +19,7 @@ import 'core/router/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'features/auth/auth_view_model.dart';
+import 'features/couple/couple_view_model.dart';
 import 'features/lock/lock_view_model.dart';
 import 'features/lock/widgets/lock_challenge_screen.dart';
 import 'features/profile/profile_view_model.dart';
@@ -54,7 +55,32 @@ const googleWebClientId =
 const mapboxPublicToken =
     'pk.eyJ1IjoidGFwYXNtYWtlciIsImEiOiJjbW9iaTJkNWEwMHljMnNweTlhaW10dGlzIn0.iOBhy3mgtWIIkLgpv7d9SQ';
 
+/// Sentry DSN — write-only 공개 값이라 클라 임베드 안전(다른 공개 토큰과 동일
+/// 컨벤션). 하드코딩해 빌드 때 dart-define 누락으로 에러 수집이 조용히 꺼지는
+/// 사고를 막는다. 실제 활성화는 release 빌드에서만(main의 kReleaseMode 게이트).
+const sentryDsn =
+    'https://e869f47c4791a39abe3acce046b53f26@o4511484750462976.ingest.us.sentry.io/4511484752101376';
+
 Future<void> main() async {
+  // 잡히지 않은 Flutter/Dart 예외를 Sentry로 수집해 유저 문의 시 역추적한다.
+  // release 빌드에서만 전송(개발 중 핫리로드 예외·테스트 throw가 쿼터를 먹지
+  // 않게). debug/profile에선 DSN을 비워 비활성. SentryFlutter.init이
+  // FlutterError.onError + PlatformDispatcher.onError + runZonedGuarded를 모두
+  // 설정하므로, 부트스트랩을 appRunner 안에서 돌려 초기화 단계 예외까지 캡처.
+  await SentryFlutter.init(
+    (options) {
+      options.dsn = kReleaseMode ? sentryDsn : '';
+      options.environment = kReleaseMode ? 'production' : 'development';
+      // 에러만 수집 — 퍼포먼스 트레이싱은 끔(비용/노이즈 절감).
+      options.tracesSampleRate = 0;
+      // PII 최소화: IP 등 기본 PII 자동수집 끔. 유저는 우리가 id만 명시 부착.
+      options.sendDefaultPii = false;
+    },
+    appRunner: _bootstrap,
+  );
+}
+
+Future<void> _bootstrap() async {
   final widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
   // 네이티브 스플래시(로고 + 테마 배경)를 첫 frame이 그려진 후에도 그대로
   // 유지 — Supabase 세션 복원 + profile 로드가 끝날 때까지 holding. 라우팅이
@@ -151,8 +177,6 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
       if (call.method != 'onTap') return null;
       final raw = call.arguments;
       if (raw is! String || raw.isEmpty) return null;
-      // ignore: discarded_futures
-      _logDeeplink('channel_payload', detail: raw);
       try {
         final decoded = jsonDecode(raw);
         if (decoded is! Map) return null;
@@ -160,17 +184,12 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
           (k, v) => MapEntry(k.toString(), v),
         );
         final intent = PushDeeplink.fromMap(data);
-        // ignore: discarded_futures
-        _logDeeplink('channel_intent',
-            detail: intent == null
-                ? 'parse_failed'
-                : 'kind=${intent.kind} scene=${intent.sceneId} content=${intent.contentId}');
         if (intent != null) {
           ref.read(pushDeeplinkProvider.notifier).set(intent);
         }
-      } catch (e) {
+      } catch (e, st) {
         // ignore: discarded_futures
-        _logDeeplink('channel_decode_error', detail: '$e');
+        Sentry.captureException(e, stackTrace: st);
       }
       return null;
     });
@@ -191,70 +210,28 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
   /// 둘 다 [pushDeeplinkProvider] state로 흘려보내고, 라우팅은 HomeView가
   /// 담당.
   void _wireUpPushTapHandlers() {
-    // ignore: discarded_futures
-    _logDeeplink('wiring_start');
-
-    // getInitialMessage Future의 호출/완료/예외/타임아웃을 모두 별개로 로그.
-    // .then이 안 찍히면 Future가 hang인지 throw인지 timeout인지 판별 가능.
-    final initialFuture = FirebaseMessaging.instance.getInitialMessage();
-    // ignore: discarded_futures
-    _logDeeplink('initial_call_returned');
-    initialFuture.then((msg) {
-      _logDeeplink('cold_start_msg',
-          detail: msg == null ? 'null' : 'data=${msg.data}');
+    // 콜드 스타트: 종료 상태에서 알림 탭 → getInitialMessage()가 한 번 반환.
+    FirebaseMessaging.instance.getInitialMessage().then((msg) {
       if (msg == null) return;
       final intent = PushDeeplink.fromRemote(msg);
-      _logDeeplink('cold_start_intent',
-          detail: intent == null
-              ? 'parse_failed'
-              : 'kind=${intent.kind} scene=${intent.sceneId} content=${intent.contentId}');
       if (intent != null) {
         ref.read(pushDeeplinkProvider.notifier).set(intent);
       }
     }).catchError((e, st) {
-      _logDeeplink('cold_start_error', detail: '$e');
-    }).whenComplete(() {
       // ignore: discarded_futures
-      _logDeeplink('cold_start_done');
-    });
-    // 안전망 — 5초 내에 whenComplete가 안 찍히면 Future가 hang. timeout 별도
-    // 로그.
-    initialFuture.timeout(const Duration(seconds: 5), onTimeout: () {
-      // ignore: discarded_futures
-      _logDeeplink('cold_start_timeout');
-      return null;
+      Sentry.captureException(e, stackTrace: st);
     });
 
+    // 백그라운드: 떠있는 상태에서 알림 탭 → onMessageOpenedApp 스트림.
     _onMessageOpenedSub = FirebaseMessaging.onMessageOpenedApp.listen((msg) {
-      _logDeeplink('opened_msg', detail: 'data=${msg.data}');
       final intent = PushDeeplink.fromRemote(msg);
-      _logDeeplink('opened_intent',
-          detail: intent == null
-              ? 'parse_failed'
-              : 'kind=${intent.kind} scene=${intent.sceneId} content=${intent.contentId}');
       if (intent != null) {
         ref.read(pushDeeplinkProvider.notifier).set(intent);
       }
     }, onError: (e, st) {
       // ignore: discarded_futures
-      _logDeeplink('opened_stream_error', detail: '$e');
+      Sentry.captureException(e, stackTrace: st);
     });
-    // ignore: discarded_futures
-    _logDeeplink('opened_listen_attached');
-  }
-
-  Future<void> _logDeeplink(String step, {String? detail}) async {
-    // 진단용 계측 — release 빌드에선 push_debug_log 쓰기를 건너뛴다.
-    if (!kDebugMode) return;
-    try {
-      final client = Supabase.instance.client;
-      final row = <String, dynamic>{
-        'user_id': client.auth.currentUser?.id,
-        'step': 'dl_$step',
-      };
-      if (detail != null) row['detail'] = detail;
-      await client.from('push_debug_log').insert(row);
-    } catch (_) {}
   }
 
   @override
@@ -282,6 +259,10 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
       if (_wasBackgrounded) {
         _wasBackgrounded = false;
         ref.read(lockViewModelProvider.notifier).markLocked();
+        // 파트너가 백그라운드 동안 탈퇴/연결 해지했을 수 있음 → active couple
+        // 강제 refetch. couple이 사라졌으면 라우터 redirect가 pairing으로 이동.
+        // ignore: discarded_futures
+        ref.read(activeCoupleProvider.notifier).refresh();
       }
     }
   }
@@ -294,23 +275,18 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
       final raw = prefs.getString('pendingPushTap');
       if (raw == null || raw.isEmpty) return;
       await prefs.remove('pendingPushTap');
-      _logDeeplink('native_payload', detail: raw);
       final decoded = jsonDecode(raw);
       if (decoded is! Map) return;
       final data = decoded.map<String, dynamic>(
         (k, v) => MapEntry(k.toString(), v),
       );
       final intent = PushDeeplink.fromMap(data);
-      _logDeeplink('native_intent',
-          detail: intent == null
-              ? 'parse_failed'
-              : 'kind=${intent.kind} scene=${intent.sceneId} content=${intent.contentId}');
       if (intent != null) {
         ref.read(pushDeeplinkProvider.notifier).set(intent);
       }
-    } catch (e) {
+    } catch (e, st) {
       // ignore: discarded_futures
-      _logDeeplink('native_drain_error', detail: '$e');
+      Sentry.captureException(e, stackTrace: st);
     }
   }
 
@@ -372,20 +348,27 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
     ref.listen(
       authViewModelProvider.select((s) => s.session?.user.id),
       (prev, next) {
+        // Sentry 유저 컨텍스트 — 문의 인입 시 user id로 에러를 역추적. id만
+        // 부착하고 이메일 등 PII는 넣지 않는다(필요 시 Supabase에서 id로 조회).
+        // ignore: discarded_futures
+        Sentry.configureScope(
+          (scope) => scope.setUser(next == null ? null : SentryUser(id: next)),
+        );
         final repo = ref.read(purchasesRepositoryProvider);
         if (next != null && next != prev) {
-          developer.log('auth->rc logIn transition', name: 'rc');
           // ignore: discarded_futures
           repo.logIn(next);
         } else if (prev != null && next == null) {
-          developer.log('auth->rc logOut transition', name: 'rc');
           // ignore: discarded_futures
           repo.logOut();
         }
       },
     );
     if (initialUserId != null) {
-      developer.log('auth->rc initial logIn', name: 'rc');
+      // ignore: discarded_futures
+      Sentry.configureScope(
+        (scope) => scope.setUser(SentryUser(id: initialUserId)),
+      );
       // ignore: discarded_futures
       ref.read(purchasesRepositoryProvider).logIn(initialUserId);
     }

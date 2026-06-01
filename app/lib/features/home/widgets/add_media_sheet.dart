@@ -67,10 +67,20 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
   void initState() {
     super.initState();
     _selectedScene = widget.initialScene;
-    _momentDate = DateTime.now();
+    _momentDate = _defaultMomentDateFor(_selectedScene);
     _loadCount();
     _bannerVariant = _nextBannerVariant;
     _nextBannerVariant = (_nextBannerVariant + 1) % 2;
+  }
+
+  /// scene에 이미 콘텐츠가 등록되어 있으면 그중 가장 최근 occurred_at을 default
+  /// 로 채워, 같은 scene에 시간 흐름을 따라 추가하는 케이스에서 매번 today를
+  /// 다시 고르지 않게 함. scene_summary 뷰가 `latest_occurred_at`을 집계해
+  /// scene.dates 마지막 원소로 노출. 콘텐츠가 없거나 occurred_at이 전부 null
+  /// 이면 dates가 비어 있어 today로 폴백.
+  DateTime _defaultMomentDateFor(Scene scene) {
+    if (scene.dates.isNotEmpty) return scene.dates.last;
+    return DateTime.now();
   }
 
   /// 선택된 scene의 콘텐츠 개수 조회. 시트 열기와 scene 교체 시 재호출. 실패는
@@ -145,6 +155,8 @@ class _AddMediaSheetState extends ConsumerState<AddMediaSheet> {
         setState(() {
           _selectedScene = picked;
           _contentCount = null;
+          // scene이 바뀌면 default moment date도 새 scene의 latest로 갱신.
+          _momentDate = _defaultMomentDateFor(picked);
         });
         _loadCount();
       }

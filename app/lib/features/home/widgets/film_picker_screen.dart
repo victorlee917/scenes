@@ -47,11 +47,11 @@ class FilmPickerScreen extends ConsumerWidget {
 
   /// TMDB language 파라미터 결정.
   ///
-  /// 앱 UI는 영어 고정이지만 영화 메타는 사용자 디바이스 locale을 따른다.
-  /// 한국어 디바이스 → `ko-KR`, 그 외 → `en-US`. MaterialApp의 `locale`
-  /// 오버라이드 영향을 받지 않도록 PlatformDispatcher 시스템 locale을 직접 읽음.
+  /// 앱 in-app locale을 따른다(설정에서 EN/KO를 고를 수 있음). KO → `ko-KR`,
+  /// 그 외 → `en-US`. 옛 구현은 PlatformDispatcher의 디바이스 locale을
+  /// 강제로 읽었지만, 앱 자체가 다국어를 지원하니 사용자 설정과 일치시킴.
   String _tmdbLocale(BuildContext context) {
-    final lang = View.of(context).platformDispatcher.locale.languageCode;
+    final lang = Localizations.localeOf(context).languageCode;
     return lang == 'ko' ? 'ko-KR' : 'en-US';
   }
 

@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
-import 'package:purchases_ui_flutter/purchases_ui_flutter.dart';
 
 /// Scenes HD 구독에 사용되는 RevenueCat entitlement 식별자. RC 대시보드와
 /// `revenuecat-webhook` Edge Function에서도 같은 이름으로 매핑. 클라/서버 어디
@@ -34,7 +33,7 @@ String _maskUserId(String? id) {
   return id.length < 8 ? id : '${id.substring(0, 8)}...';
 }
 
-/// `Purchases`/`RevenueCatUI` 호출을 전부 감싸는 Repository.
+/// `Purchases` 호출을 전부 감싸는 Repository.
 ///
 /// View/ViewModel은 SDK 타입을 직접 import하지 않고 이 클래스를 통해서만
 /// 인터랙트 — 추후 SDK 교체나 Android 분기 시 영향 면적이 작다.
@@ -121,10 +120,6 @@ class PurchasesRepository {
     if (!_configured) return null;
     try {
       final info = await Purchases.getCustomerInfo();
-      _log(
-        'getCustomerInfo: OK appUserId=${_maskUserId(info.originalAppUserId)} '
-        'entitlements=${info.entitlements.active.keys.toList()}',
-      );
       return info;
     } catch (e, st) {
       _log('getCustomerInfo: FAILED', error: e, stackTrace: st);
@@ -137,10 +132,6 @@ class PurchasesRepository {
   Stream<CustomerInfo> customerInfoStream() {
     final controller = StreamController<CustomerInfo>.broadcast();
     void listener(CustomerInfo info) {
-      _log(
-        'customerInfo update: appUserId=${_maskUserId(info.originalAppUserId)} '
-        'entitlements=${info.entitlements.active.keys.toList()}',
-      );
       controller.add(info);
     }
 
@@ -247,20 +238,6 @@ class PurchasesRepository {
     if (error is! PlatformException) return false;
     return PurchasesErrorHelper.getErrorCode(error) ==
         PurchasesErrorCode.purchaseCancelledError;
-  }
-
-  /// RC 대시보드에서 구성한 Customer Center를 네이티브로 띄움. 사용자는 여기서
-  /// 구독 관리, 환불 요청 안내, 만료일 확인, 변경 등을 수행한다. 환불·취소
-  /// 자체는 결국 App Store 설정으로 위임됨.
-  Future<void> presentCustomerCenter() async {
-    _log('presentCustomerCenter: open');
-    try {
-      await RevenueCatUI.presentCustomerCenter();
-      _log('presentCustomerCenter: closed');
-    } catch (e, st) {
-      _log('presentCustomerCenter: FAILED', error: e, stackTrace: st);
-      rethrow;
-    }
   }
 
   /// CustomerInfo가 특정 entitlement을 active로 들고 있는지 검사.

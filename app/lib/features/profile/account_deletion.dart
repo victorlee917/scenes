@@ -4,13 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/widgets/app_toast.dart';
 import '../../core/widgets/confirm_dialog.dart';
 import '../../l10n/app_localizations.dart';
-import '../auth/auth_view_model.dart';
-import '../profile/data/profile_repository.dart';
 import '../profile/profile_view_model.dart';
-import '../push/push_service.dart';
+import 'delete_account_confirm_screen.dart';
 
 /// 계정 탈퇴 흐름 공용 헬퍼. Settings의 Danger Zone과 페어링 화면의 더보기
 /// 시트가 동일 경로로 호출하도록 모음.
@@ -36,6 +33,7 @@ class AccountDeletion {
       context: context,
       title: l10n.deleteAccountConfirmTitle,
       message: l10n.deleteAccountConfirmMessage,
+      noticeText: l10n.deleteAccountConfirmNotice,
       confirmLabel: l10n.deleteAccountConfirmAction,
       isDestructive: true,
     );
@@ -48,16 +46,10 @@ class AccountDeletion {
       if (!shouldProceed || !context.mounted) return;
     }
 
-    // 3) 실행 — push 토큰 정리 → softDelete → signOut. 라우터가 session 변화로
-    // onboarding으로 자동 이동.
-    try {
-      await ref.read(pushServiceProvider).clearForCurrentDevice();
-      await ref.read(profileRepositoryProvider).softDeleteAccount();
-      await ref.read(authViewModelProvider.notifier).signOut();
-    } catch (_) {
-      if (!context.mounted) return;
-      AppToast.show(context, l10n.deleteAccountFailedToast);
-    }
+    // 3) 마지막 단계 — 타이핑 서명 시트. 사용자가 'DELETE'를 정확히 입력해야
+    // 영구 삭제 버튼이 활성화. 시트 안에서 EF 호출 + signOut까지 처리.
+    if (!context.mounted) return;
+    await DeleteAccountConfirmSheet.show(context);
   }
 
   /// 활성 구독 안내 다이얼로그. true 반환 = "Delete anyway" 진행, false =

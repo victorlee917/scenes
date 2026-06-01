@@ -168,6 +168,16 @@ class CoupleRepository {
     );
   }
 
+  /// 본인이 멤버인 couples row의 DELETE 이벤트. 상대가 탈퇴하면 purge가
+  /// couples row 자체를 hard delete하므로 UPDATE 구독으로는 못 잡힘 — 별도로
+  /// DELETE도 구독해야 파트너 클라가 즉시 pairing 화면으로 redirect.
+  Stream<void> watchActiveCoupleDeletes() {
+    return _watchCoupleEvents(
+      keyPrefix: 'couple_delete',
+      event: PostgresChangeEvent.delete,
+    );
+  }
+
   /// 특정 partner profile row의 UPDATE 이벤트. 파트너의 name/avatar 변경,
   /// deleted_at 전이를 실시간 반영. profile id를 직접 알아야 채널을 걸 수 있어
   /// 호출자가 active couple에서 partner.id를 알아낸 뒤 호출.

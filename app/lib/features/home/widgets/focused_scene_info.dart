@@ -12,9 +12,13 @@ import '../models/scene.dart';
 /// 스크롤 중에는 부모가 내용을 일부러 고정시켜 fade-out 도중 목표 씬이
 /// 깜빡이는 문제를 피할 수 있다. [scene]이 `null`이면 아무것도 그리지 않음.
 class FocusedSceneInfo extends StatelessWidget {
-  const FocusedSceneInfo({super.key, this.scene});
+  const FocusedSceneInfo({super.key, this.scene, this.onDateTap});
 
   final Scene? scene;
+  // 날짜 영역 단독 탭 — bulk edit-date 시트 진입용. 부모(scene_detail)는
+  // info 블록 전체에 edit sheet 탭을 걸어두지만, 날짜를 정확히 누르면 그
+  // 핸들러를 가로채 별도 시트가 뜨도록.
+  final VoidCallback? onDateTap;
 
   @override
   Widget build(BuildContext context) {
@@ -110,10 +114,21 @@ class FocusedSceneInfo extends StatelessWidget {
           ],
           if (hasContents) ...[
             const SizedBox(height: 12),
-            Text(
-              dateText,
-              textAlign: TextAlign.center,
-              style: dateStyle,
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDateTap,
+              child: Padding(
+                // 탭 영역을 글자 주위로 살짝 키워 손가락이 닿기 쉽게.
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                child: Text(
+                  dateText,
+                  textAlign: TextAlign.center,
+                  style: dateStyle,
+                ),
+              ),
             ),
           ],
         ],

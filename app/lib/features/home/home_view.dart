@@ -1,11 +1,9 @@
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_typography.dart';
@@ -59,6 +57,11 @@ class _HomeViewState extends ConsumerState<HomeView> {
   /// 포커스 카드를 viewport 세로 중심에서 위로 얼마나 올릴지.
   static const double _canisterUpwardOffset = 80;
 
+  /// 캐니스터 바닥 ↔ 메타 정보(#title) 상단 사이의 시각 여백. 기기 크기에
+  /// 따라 자동으로 캐니스터 위치가 위로 올라오므로, 이 gap을 고정값으로 두면
+  /// 모든 기기에서 동일한 여백이 유지됨.
+  static const double _canisterToInfoGap = 42;
+
   static const double _minScale = 0.5;
   static const double _minOpacity = 0.0;
 
@@ -67,8 +70,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
   // 푸시 딥링크가 처리 대기 중인지 — 같은 intent에 대해 post-frame 콜백을
   // 중복 큐잉하지 않도록 가드. intent 처리가 끝나면 다시 false로.
   bool _deeplinkScheduled = false;
-  // 같은 intent를 build마다 중복 로그 안 찍도록 set으로 dedupe.
-  final Set<PushDeeplink> _lastLoggedIntent = {};
 
   /// scenes가 처음 로드되고 cover 이미지들도 모두 precache된 시점부터 true.
   /// 그 전엔 스피너만 보여줌 — PageView 안의 Image.network 로딩으로 한 프레임
@@ -144,11 +145,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
   /// scene이 현재 리스트에 없으면(삭제됐거나 다른 페어 컨텍스트) 무시.
   void _navigateToDeeplink(PushDeeplink intent, List<Scene> scenes) {
     final sceneId = intent.sceneId;
-    if (sceneId == null) {
-      // ignore: discarded_futures
-      _logDeeplink('nav_skip', detail: 'no_scene_id');
-      return;
-    }
+    if (sceneId == null) return;
     Scene? scene;
     for (final s in scenes) {
       if (s.id == sceneId) {
@@ -156,18 +153,9 @@ class _HomeViewState extends ConsumerState<HomeView> {
         break;
       }
     }
-    if (scene == null) {
-      // ignore: discarded_futures
-      _logDeeplink('nav_skip',
-          detail:
-              'scene_not_in_list scene=$sceneId scenes_count=${scenes.length}');
-      return;
-    }
+    // scene이 현재 리스트에 없으면(삭제됐거나 다른 페어 컨텍스트) 무시.
+    if (scene == null) return;
     final viewportWidth = MediaQuery.sizeOf(context).width;
-    // ignore: discarded_futures
-    _logDeeplink('nav_push',
-        detail:
-            'scene=$sceneId content=${intent.contentId}');
     // 푸시는 새 콘텐츠/리액션을 알리는 거라 detail에서 봐야 할 데이터가 보통
     // 캐시 미반영 상태. invalidate로 fresh fetch 강제.
     ref.invalidate(contentsForSceneProvider(sceneId));
@@ -180,20 +168,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
         initialContentId: intent.contentId,
       ),
     );
-  }
-
-  Future<void> _logDeeplink(String step, {String? detail}) async {
-    // 진단용 계측 — release 빌드에선 push_debug_log 쓰기를 건너뛴다.
-    if (!kDebugMode) return;
-    try {
-      final client = Supabase.instance.client;
-      final row = <String, dynamic>{
-        'user_id': client.auth.currentUser?.id,
-        'step': 'dl_$step',
-      };
-      if (detail != null) row['detail'] = detail;
-      await client.from('push_debug_log').insert(row);
-    } catch (_) {}
   }
 
   bool _onScrollNotification(ScrollNotification notification) {
@@ -269,6 +243,13 @@ class _HomeViewState extends ConsumerState<HomeView> {
     final l10n = AppLocalizations.of(context);
     final padding = MediaQuery.paddingOf(context);
     final viewport = MediaQuery.sizeOf(context);
+    // 캐니스터는 carousel(=viewport 높이) 세로 중앙에서 _canisterUpwardOffset
+    // 만큼 위로 그려진다. 메타 정보(#title)는 이 캐니스터 바닥 + gap에 anchor —
+    // 기기 폭/높이가 변해도 동일한 시각 여백을 유지.
+    final canisterSize = viewport.width * _viewportFraction;
+    final canisterBottomY =
+        viewport.height / 2 - _canisterUpwardOffset + canisterSize / 2;
+    final infoTopY = canisterBottomY + _canisterToInfoGap;
 
     // 첫 로드 끝나기 전엔 PageController도 안 만들고 spinner만. 미리 만들면
     // 빈 scenes 기준 initialPage=0이라 Add 슬롯이 잠깐 깜빡이며 노출됨.
@@ -289,13 +270,6 @@ class _HomeViewState extends ConsumerState<HomeView> {
     //   - background→foreground: intent가 도착하면 다음 build에서 잡힘.
     // ready + scenes.isNotEmpty이고 처음 보는 intent일 때만 post-frame 큐잉.
     final pendingIntent = ref.watch(pushDeeplinkProvider);
-    if (pendingIntent != null && !_lastLoggedIntent.contains(pendingIntent)) {
-      _lastLoggedIntent.add(pendingIntent);
-      // ignore: discarded_futures
-      _logDeeplink('home_seen',
-          detail:
-              'kind=${pendingIntent.kind} scene=${pendingIntent.sceneId} content=${pendingIntent.contentId} ready=$ready scenes=${scenes.length} scheduled=$_deeplinkScheduled');
-    }
     if (pendingIntent != null &&
         ready &&
         scenes.isNotEmpty &&
@@ -511,7 +485,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                         // 거의 같은 곳. 한/영 폰트는 display(text:)가 자동.
                         if (isEmpty)
                           Positioned(
-                            top: viewport.height - padding.bottom - 362,
+                            top: infoTopY,
                             left: 24,
                             right: 24,
                             child: IgnorePointer(
@@ -555,7 +529,7 @@ class _HomeViewState extends ConsumerState<HomeView> {
                         // 아래로 자연 흘러내림. 362 ≈ 캐니스터 바닥과 50px 마진.
                         if (!isEmpty)
                           Positioned(
-                            top: viewport.height - padding.bottom - 362,
+                            top: infoTopY,
                             left: 0,
                             right: 0,
                             child: IgnorePointer(

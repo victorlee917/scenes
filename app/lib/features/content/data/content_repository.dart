@@ -352,6 +352,23 @@ class ContentRepository {
         .eq('id', contentId);
   }
 
+  /// 한 scene에 속한 모든 contents의 occurred_at을 한 번에 설정. contents의
+  /// UPDATE RLS는 created_by = auth.uid() 라 직접 update하면 본인 row만 바뀜
+  /// (파트너 업로드는 silently skip). SECURITY DEFINER RPC로 우회 — 함수가
+  /// 자체적으로 active 페어 멤버임을 검증함.
+  Future<void> updateOccurredAtForScene(
+    String sceneId,
+    DateTime occurredAt,
+  ) async {
+    await _client.rpc(
+      'bulk_update_scene_moment_dates',
+      params: {
+        'p_scene_id': sceneId,
+        'p_occurred_at': occurredAt.toIso8601String(),
+      },
+    );
+  }
+
   /// scene 안의 모든 contents에 달린 반응(나 + 파트너)을 한 번에 조회.
   /// `(user_id, content_id)` PK니까 contents id로 in-filter 후 client에서
   /// content별로 그룹핑해 사용.

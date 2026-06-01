@@ -203,8 +203,32 @@ abstract class AppLocalizations {
   /// Action label to edit a scene in the detail action sheet.
   ///
   /// In en, this message translates to:
-  /// **'Edit'**
+  /// **'Edit scene'**
   String get sceneDetailEdit;
+
+  /// Action label that opens a sheet to set the date for every moment in this scene.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit date'**
+  String get sceneDetailEditDate;
+
+  /// Title shown on the bulk-edit date picker sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit date'**
+  String get sceneDetailEditDateSheetTitle;
+
+  /// Helper text shown above the bulk-edit date picker explaining its scope.
+  ///
+  /// In en, this message translates to:
+  /// **'Sets the date for every moment in this scene.'**
+  String get sceneDetailEditDateSheetInfo;
+
+  /// Toast shown when the bulk-edit moment date call fails.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to update dates.'**
+  String get sceneDetailEditDateFailedToast;
 
   /// No description provided for @actionDelete.
   ///
@@ -932,6 +956,18 @@ abstract class AppLocalizations {
   /// **'Search by Apple Maps'**
   String get placePickerAppleAttribution;
 
+  /// No description provided for @placePickerScopeDomestic.
+  ///
+  /// In en, this message translates to:
+  /// **'Korea'**
+  String get placePickerScopeDomestic;
+
+  /// No description provided for @placePickerScopeOverseas.
+  ///
+  /// In en, this message translates to:
+  /// **'Overseas'**
+  String get placePickerScopeOverseas;
+
   /// No description provided for @onboardingGetStarted.
   ///
   /// In en, this message translates to:
@@ -1067,8 +1103,8 @@ abstract class AppLocalizations {
   /// No description provided for @pairingShareMessage.
   ///
   /// In en, this message translates to:
-  /// **'Join me on Scenes! Use my invite code: {code}'**
-  String pairingShareMessage(String code);
+  /// **'Let\'s collect our scenes together on Scenes 💞\n\nDownload the app → {link}\nInvite code: {code}'**
+  String pairingShareMessage(String link, String code);
 
   /// No description provided for @pairingFailedToast.
   ///
@@ -1543,6 +1579,36 @@ abstract class AppLocalizations {
   /// **'You and your person will be unpaired.'**
   String get disconnectConfirmMessage;
 
+  /// No description provided for @disconnectConfirmNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'All data tied to this relationship (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted 6 months later.'**
+  String get disconnectConfirmNotice;
+
+  /// No description provided for @disconnectSignTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Final check'**
+  String get disconnectSignTitle;
+
+  /// No description provided for @disconnectSignHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Type UNPAIR to confirm the disconnect.'**
+  String get disconnectSignHeading;
+
+  /// No description provided for @disconnectSignPhrase.
+  ///
+  /// In en, this message translates to:
+  /// **'UNPAIR'**
+  String get disconnectSignPhrase;
+
+  /// No description provided for @disconnectSignInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type UNPAIR'**
+  String get disconnectSignInputHint;
+
   /// No description provided for @disconnectConfirmAction.
   ///
   /// In en, this message translates to:
@@ -1566,6 +1632,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'This cannot be undone.'**
   String get deleteAccountConfirmMessage;
+
+  /// No description provided for @deleteAccountConfirmNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Your account and all relationship data (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted right away. Your partner will lose access too.'**
+  String get deleteAccountConfirmNotice;
+
+  /// No description provided for @deleteAccountSignTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Final check'**
+  String get deleteAccountSignTitle;
+
+  /// No description provided for @deleteAccountSignHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Type DELETE to permanently remove your account.'**
+  String get deleteAccountSignHeading;
+
+  /// No description provided for @deleteAccountSignPhrase.
+  ///
+  /// In en, this message translates to:
+  /// **'DELETE'**
+  String get deleteAccountSignPhrase;
+
+  /// No description provided for @deleteAccountSignInputHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Type DELETE'**
+  String get deleteAccountSignInputHint;
+
+  /// No description provided for @deleteAccountSignAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete forever'**
+  String get deleteAccountSignAction;
+
+  /// No description provided for @deleteAccountSignDeleting.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleting…'**
+  String get deleteAccountSignDeleting;
 
   /// No description provided for @deleteAccountConfirmAction.
   ///
@@ -1762,7 +1870,7 @@ abstract class AppLocalizations {
   /// No description provided for @lockForgotConfirmBody.
   ///
   /// In en, this message translates to:
-  /// **'Signing out will turn off App Lock. After signing in again, you\'ll need to set it up from Settings.'**
+  /// **'Signing out will turn off App Lock.\nAfter signing in again, you\'ll need to set it up from Settings.'**
   String get lockForgotConfirmBody;
 
   /// No description provided for @lockForgotConfirmAction.

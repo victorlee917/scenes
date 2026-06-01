@@ -38,6 +38,10 @@ type RcEvent = {
   original_transaction_id?: string;
   event_timestamp_ms: number;
   expiration_at_ms?: number;
+  // TRANSFER 이벤트 전용: 권한을 잃는/얻는 app_user_id 목록. 익명 id
+  // ($RCAnonymousID:...)가 섞일 수 있어 처리 전 profile id만 필터한다.
+  transferred_from?: string[];
+  transferred_to?: string[];
 };
 
 type ProfileUpdate = {
@@ -109,11 +113,63 @@ function mapEventToProfileUpdate(rc: RcEvent): ProfileUpdate | null {
       };
 
     case "TRANSFER":
+      // 다중 유저(from 다운그레이드 + to 업그레이드)라 단일 패치 모델에 안 맞음.
+      // 핸들러에서 applyTransfer로 별도 처리.
+      return null;
+
     case "SUBSCRIBER_ALIAS":
     case "TEST":
     default:
       return null; // log only
   }
+}
+
+// TRANSFER 처리: 같은 스토어 영수증이 다른 app_user_id로 이전될 때
+// (예: A가 구독 후 같은 Apple ID로 로그인한 B가 "구매 복원"). RC 기본 동작은
+// 새 유저로 이전 — transferred_from은 권한을 잃는 유저, transferred_to는 얻는
+// 유저. from은 free/expired로, to는 scenes_hd/active로 갱신해 DB·클라
+// (hasActiveSubscription)·서버(pair_has_active_hd)를 RC와 일치시킨다.
+async function applyTransfer(
+  supabase: ReturnType<typeof createClient>,
+  from: string[],
+  to: string[],
+  rc: RcEvent,
+): Promise<boolean> {
+  if (from.length > 0) {
+    const { error } = await supabase
+      .from("profiles")
+      .update({ subscription_tier: "free", subscription_status: "expired" })
+      .in("id", from);
+    if (error) {
+      console.error("transfer downgrade failed", error);
+      return false;
+    }
+  }
+
+  if (to.length > 0) {
+    const expiresAt = rc.expiration_at_ms
+      ? new Date(rc.expiration_at_ms).toISOString()
+      : null;
+    const provider = rc.store
+      ? (STORE_MAP[rc.store] as ProfileUpdate["subscription_provider"])
+      : undefined;
+    const up: ProfileUpdate = {
+      subscription_tier: "scenes_hd",
+      subscription_status: "active",
+    };
+    // TRANSFER 페이로드엔 만료/스토어가 없을 수 있으므로 있을 때만 덮어쓴다.
+    // (pair_has_active_hd는 expires_at을 보지 않아 tier+status만으로 충분.)
+    if (expiresAt) up.subscription_expires_at = expiresAt;
+    if (provider) up.subscription_provider = provider;
+
+    const { error } = await supabase.from("profiles").update(up).in("id", to);
+    if (error) {
+      console.error("transfer upgrade failed", error);
+      return false;
+    }
+  }
+
+  return true;
 }
 
 Deno.serve(async (req) => {
@@ -135,9 +191,20 @@ Deno.serve(async (req) => {
   }
 
   const rc = body.event;
-  if (!rc || !rc.type || !rc.app_user_id) {
+  if (!rc || !rc.type) {
     return new Response("Malformed event", { status: 400 });
   }
+  const isTransfer = rc.type === "TRANSFER";
+  // TRANSFER는 app_user_id 없이 transferred_from/to 배열만 옴. 그 외 이벤트는
+  // contract상 app_user_id(=auth.uid)가 반드시 있어야 한다.
+  if (!isTransfer && !rc.app_user_id) {
+    return new Response("Malformed event", { status: 400 });
+  }
+
+  const isProfileId = (id?: string | null): id is string =>
+    !!id && !id.startsWith("$RCAnonymousID");
+  const transferFrom = (rc.transferred_from ?? []).filter(isProfileId);
+  const transferTo = (rc.transferred_to ?? []).filter(isProfileId);
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
@@ -148,7 +215,8 @@ Deno.serve(async (req) => {
   const { error: logError } = await supabase
     .from("subscription_events")
     .insert({
-      user_id: rc.app_user_id,
+      // TRANSFER엔 app_user_id가 없으므로 배열의 유효 profile id로 대체.
+      user_id: rc.app_user_id ?? transferTo[0] ?? transferFrom[0] ?? null,
       event_type: rc.type,
       source: "revenuecat",
       product_id: rc.product_id ?? null,
@@ -161,6 +229,15 @@ Deno.serve(async (req) => {
   if (logError) {
     console.error("subscription_events insert failed", logError);
     return new Response("DB error", { status: 500 });
+  }
+
+  if (isTransfer) {
+    const ok = await applyTransfer(supabase, transferFrom, transferTo, rc);
+    if (!ok) return new Response("DB error", { status: 500 });
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const update = mapEventToProfileUpdate(rc);

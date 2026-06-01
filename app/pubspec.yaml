@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+67
+version: 1.0.3+1
 
 environment:
   sdk: ^3.11.1
@@ -71,13 +71,11 @@ dependencies:
   # Recap의 Place 매체에서 풀스크린 Mapbox + fly-to를 위해 사용. iOS/Android
   # native SDK를 다운받으려면 별도 secret token이 필요(.netrc / gradle).
   mapbox_maps_flutter: ^2.5.0
-  # Scenes HD 구독 — RevenueCat SDK.
-  #   - purchases_flutter: 구독/구매/CustomerInfo 핵심 SDK.
-  #   - purchases_ui_flutter: RC 대시보드에서 디자인한 Paywall + Customer Center
-  #     를 네이티브로 띄움. iOS 15.0+ 필요(Podfile/xcconfig에서 deployment
-  #     target 맞춤).
+  # Scenes HD 구독 — RevenueCat SDK. 구독/구매/CustomerInfo 핵심 SDK만 사용.
+  # RC가 제공하는 Paywall/Customer Center UI는 안 씀 — SubscriptionScreen이 곧
+  # paywall이고, 구독 관리는 iOS 시스템 설정으로 위임.
   purchases_flutter: ^8.0.0
-  purchases_ui_flutter: ^8.0.0
+  sentry_flutter: ^8.14.2
 
 dev_dependencies:
   flutter_test:

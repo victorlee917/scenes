@@ -13,7 +13,7 @@ import '../../core/widgets/confirm_dialog.dart';
 import '../../l10n/app_localizations.dart';
 import '../auth/auth_view_model.dart';
 import '../home/widgets/detail_app_bar.dart';
-import '../onboarding/noti_prompt_screen.dart';
+import '../subscription/debug_subscription_override.dart';
 import 'danger_zone_screen.dart';
 import 'language_screen.dart';
 import 'lock_screen.dart';
@@ -87,6 +87,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final l10n = AppLocalizations.of(context);
     final user = ref.watch(authViewModelProvider.select((s) => s.session?.user));
     final localeTag = Localizations.localeOf(context).toLanguageTag();
+    // 디버그 전용: 지정 테스트 계정에서만 "강제 HD" 토글 노출.
+    final showDebugHdToggle = canUseDebugSubscriptionToggle();
+    final forceHd = ref.watch(debugForceHdProvider).valueOrNull ?? false;
 
     return Scaffold(
       // backgroundColor handled by theme
@@ -131,17 +134,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     Navigator.of(context).push(LanguageScreen.route());
                   },
                 ),
-                // [DEBUG] noti-prompt 화면 디자인 미리보기용. 확인 끝나면 삭제.
-                _SettingsTile(
-                  label: 'Preview noti prompt',
-                  onTap: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const NotiPromptScreen(),
-                      ),
-                    );
-                  },
-                ),
+                if (showDebugHdToggle)
+                  _SettingsTile(
+                    label: 'Force HD (debug)',
+                    trailing: Switch.adaptive(
+                      value: forceHd,
+                      onChanged: (v) =>
+                          ref.read(debugForceHdProvider.notifier).set(v),
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 _SectionHeader(label: l10n.settingsSectionAbout),
                 _SettingsTile(

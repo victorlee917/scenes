@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -16,6 +17,7 @@ import '../home/widgets/detail_app_bar.dart';
 import 'data/purchases_repository.dart';
 import 'purchases_view_model.dart';
 import 'subscription_view_model.dart';
+import 'widgets/heart_burst.dart';
 
 /// Scenes HD 구독 화면.
 ///
@@ -37,10 +39,22 @@ class SubscriptionScreen extends ConsumerStatefulWidget {
 class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerController;
+  // 구독자 버튼 위치 추적 — burst origin 계산용.
+  final GlobalKey _primaryButtonKey = GlobalKey();
 
   // RC가 지역화 가격을 못 줄 때(로딩 중·미설정)만 쓰는 fallback — USD
   // 기준가. 정상 경로에선 storeProduct.priceString(지역 통화)을 쓴다.
   static const _fallbackMonthlyPrice = r'$4.99';
+
+  void _burstFromButton() {
+    final ctx = _primaryButtonKey.currentContext;
+    if (ctx == null) return;
+    final box = ctx.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return;
+    final topLeft = box.localToGlobal(Offset.zero);
+    final center = topLeft + Offset(box.size.width / 2, box.size.height / 2);
+    HeartBurst.show(context, center);
+  }
 
   @override
   void initState() {
@@ -278,13 +292,16 @@ class _SubscriptionScreenState extends ConsumerState<SubscriptionScreen>
                       alignment: Alignment.topCenter,
                       children: [
                         GestureDetector(
+                          key: _primaryButtonKey,
                           onTap: purchaseAction.isBusy
                               ? null
                               : () async {
                                   if (isSubscribed) {
-                                    // 가입자: RC Customer Center 진입 — 구독
-                                    // 관리/환불 안내/만료일 확인 등 사용자 직접.
-                                    await purchasesNotifier.openCustomerCenter();
+                                    // 구독자: 관리 화면 대신 짧은 하트 burst
+                                    // 인터랙션으로 감사 표시. 실제 구독 관리는
+                                    // iOS 설정 → Apple ID → 구독에서 처리.
+                                    HapticFeedback.mediumImpact();
+                                    _burstFromButton();
                                     return;
                                   }
                                   // 무료 회원: StoreKit 결제 시트 직접 호출

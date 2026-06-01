@@ -458,26 +458,35 @@ class _ContentViewerV2State extends ConsumerState<ContentViewerV2> {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (widget.sceneName != null)
+                    // 좌측 텍스트 영역 — 길어지면 ellipsis. Expanded로 잡아야
+                    // 우측 index/X pill을 밀어내지 않음.
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (widget.sceneName != null)
+                            Text(
+                              widget.sceneName!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.body(
+                                13,
+                                weight: FontWeight.w600,
+                              ).copyWith(color: context.colors.foreground),
+                            ),
                           Text(
-                            widget.sceneName!,
+                            _mediaTypeLabel(l10n, _currentMediaType),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: AppTypography.body(
-                              13,
-                              weight: FontWeight.w600,
-                            ).copyWith(color: context.colors.foreground),
+                              11,
+                            ).copyWith(color: context.colors.foregroundMuted),
                           ),
-                        Text(
-                          _mediaTypeLabel(l10n, _currentMediaType),
-                          style: AppTypography.body(
-                            11,
-                          ).copyWith(color: context.colors.foregroundMuted),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                    const Spacer(),
+                    // 좌측 텍스트와 우측 pill 사이 여백.
+                    const SizedBox(width: 12),
                     // 우: 인덱스 · X pill. 인덱스 영역은 비활성, X 아이콘 영역만
                     // 누르면 닫힘. (실수 탭으로 viewer가 사라지는 경우 방지)
                     ClipRRect(

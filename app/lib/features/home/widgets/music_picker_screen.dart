@@ -45,10 +45,10 @@ class MusicPickerScreen extends ConsumerWidget {
     );
   }
 
-  /// Spotify language/market 결정. 디바이스 시스템 locale을 직접 읽어
-  /// MaterialApp.locale 오버라이드 영향을 받지 않도록.
+  /// Spotify language/market 결정. 앱 in-app locale을 따름 — 설정에서 고른
+  /// 언어와 검색 결과 표기를 일치시킴.
   String _spotifyLocale(BuildContext context) {
-    final lang = View.of(context).platformDispatcher.locale.languageCode;
+    final lang = Localizations.localeOf(context).languageCode;
     return lang == 'ko' ? 'ko' : 'en';
   }
 

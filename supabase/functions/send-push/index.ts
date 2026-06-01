@@ -121,8 +121,6 @@ Deno.serve(async (req) => {
 
   const deadTokens: string[] = [];
   let sent = 0;
-  // 진단용 — push_debug_log에 EF 결과 적기. 일시적, 발송 디버깅 끝나면 제거.
-  const diagFailures: string[] = [];
   for (const row of rows) {
     const tokenStr = (row as { token: string }).token;
     const message = {
@@ -153,7 +151,6 @@ Deno.serve(async (req) => {
       continue;
     }
     const respText = await resp.text();
-    diagFailures.push(`status=${resp.status} body=${respText.slice(0, 220)}`);
     // FCM의 invalid/unregistered token 응답: 404 + "UNREGISTERED" 또는
     // "INVALID_ARGUMENT"+errorCode INVALID_REGISTRATION. 보수적으로 404/400
     // + "UNREGISTERED|INVALID" 패턴이면 정리.
@@ -171,18 +168,6 @@ Deno.serve(async (req) => {
   if (deadTokens.length > 0) {
     await admin.from("device_tokens").delete().in("token", deadTokens);
   }
-
-  // 매 send 호출의 결과를 진단 테이블에 기록 — 발송 후 쿼리해서 어디서
-  // 막혔는지 확인.
-  try {
-    const detail = `tokens=${rows.length} sent=${sent} removed=${deadTokens.length}` +
-      (diagFailures.length > 0 ? ` failures=[${diagFailures.join(' | ')}]` : '');
-    await admin.from('push_debug_log').insert({
-      user_id: userId,
-      step: 'ef_send_push',
-      detail,
-    });
-  } catch (_) {}
 
   return new Response(
     JSON.stringify({ sent, removed: deadTokens.length }),

@@ -80,9 +80,25 @@
   "@sceneListSave": {
     "description": "Save button label in scene list reorder mode."
   },
-  "sceneDetailEdit": "Edit",
+  "sceneDetailEdit": "Edit scene",
   "@sceneDetailEdit": {
     "description": "Action label to edit a scene in the detail action sheet."
+  },
+  "sceneDetailEditDate": "Edit date",
+  "@sceneDetailEditDate": {
+    "description": "Action label that opens a sheet to set the date for every moment in this scene."
+  },
+  "sceneDetailEditDateSheetTitle": "Edit date",
+  "@sceneDetailEditDateSheetTitle": {
+    "description": "Title shown on the bulk-edit date picker sheet."
+  },
+  "sceneDetailEditDateSheetInfo": "Sets the date for every moment in this scene.",
+  "@sceneDetailEditDateSheetInfo": {
+    "description": "Helper text shown above the bulk-edit date picker explaining its scope."
+  },
+  "sceneDetailEditDateFailedToast": "Failed to update dates.",
+  "@sceneDetailEditDateFailedToast": {
+    "description": "Toast shown when the bulk-edit moment date call fails."
   },
   "actionDelete": "Delete",
   "actionRemove": "Remove",
@@ -302,6 +318,8 @@
   "placePickerSearchHint": "Search places…",
   "placePickerEmpty": "Search for a place to add.",
   "placePickerAppleAttribution": "Search by Apple Maps",
+  "placePickerScopeDomestic": "Korea",
+  "placePickerScopeOverseas": "Overseas",
   "onboardingGetStarted": "Get Started",
   "onboardingContinueWithApple": "Continue with Apple",
   "onboardingContinueWithGoogle": "Continue with Google",
@@ -332,9 +350,13 @@
   "pairingEnterCodeHint": "Your person's code",
   "pairingEnterCodeAction": "Pair",
   "pairingCodeCopiedToast": "Code copied",
-  "pairingShareMessage": "Join me on Scenes! Use my invite code: {code}",
+  "pairingShareMessage": "Let's collect our scenes together on Scenes 💞\n\nDownload the app → {link}\nInvite code: {code}",
   "@pairingShareMessage": {
     "placeholders": {
+      "link": {
+        "type": "String",
+        "example": "https://victorlee917.github.io/scenes"
+      },
       "code": {
         "type": "String",
         "example": "ABCDEF"
@@ -520,13 +542,17 @@
   "subscriptionFooterPlan": "Scenes HD is a monthly auto-renewing subscription at {price}/month, with a 7-day free trial for new subscribers.",
   "@subscriptionFooterPlan": {
     "placeholders": {
-      "price": { "type": "String" }
+      "price": {
+        "type": "String"
+      }
     }
   },
   "subscriptionFooterTrialConversion": "Your 7-day free trial automatically converts to a paid monthly subscription at {price} when the trial ends. To avoid being charged, cancel at least 24 hours before your trial ends.",
   "@subscriptionFooterTrialConversion": {
     "placeholders": {
-      "price": { "type": "String" }
+      "price": {
+        "type": "String"
+      }
     }
   },
   "subscriptionFooterTrialEligibility": "The free trial is available to new subscribers only. If you have previously subscribed with this Apple ID (including through Family Sharing), you may not be eligible for another free trial.",
@@ -534,14 +560,18 @@
   "subscriptionFooterRenewal": "Your subscription automatically renews unless auto-renew is turned off at least 24 hours before the end of the current period. Your account will be charged for renewal within 24 hours prior to the end of the current period at {price}/month.",
   "@subscriptionFooterRenewal": {
     "placeholders": {
-      "price": { "type": "String" }
+      "price": {
+        "type": "String"
+      }
     }
   },
   "subscriptionFooterManage": "You can manage or cancel your subscription in your App Store account settings after purchase. Any unused portion of a free trial will be forfeited when you start a paid subscription.",
   "subscriptionCtaSubscribe": "Subscribe for {price}/mo",
   "@subscriptionCtaSubscribe": {
     "placeholders": {
-      "price": { "type": "String" }
+      "price": {
+        "type": "String"
+      }
     }
   },
   "subscriptionCtaManage": "Manage Subscription",
@@ -584,10 +614,22 @@
   "signOutConfirmAction": "Sign Out",
   "disconnectConfirmTitle": "Disconnect?",
   "disconnectConfirmMessage": "You and your person will be unpaired.",
+  "disconnectConfirmNotice": "All data tied to this relationship (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted 6 months later.",
+  "disconnectSignTitle": "Final check",
+  "disconnectSignHeading": "Type UNPAIR to confirm the disconnect.",
+  "disconnectSignPhrase": "UNPAIR",
+  "disconnectSignInputHint": "Type UNPAIR",
   "disconnectConfirmAction": "Disconnect",
   "disconnectFailedToast": "Failed to disconnect.",
   "deleteAccountConfirmTitle": "Delete account?",
   "deleteAccountConfirmMessage": "This cannot be undone.",
+  "deleteAccountConfirmNotice": "Your account and all relationship data (scenes, photos, films, music, places, reactions, etc.) will be permanently deleted right away. Your partner will lose access too.",
+  "deleteAccountSignTitle": "Final check",
+  "deleteAccountSignHeading": "Type DELETE to permanently remove your account.",
+  "deleteAccountSignPhrase": "DELETE",
+  "deleteAccountSignInputHint": "Type DELETE",
+  "deleteAccountSignAction": "Delete forever",
+  "deleteAccountSignDeleting": "Deleting…",
   "deleteAccountConfirmAction": "Delete",
   "deleteAccountFailedToast": "Failed to delete account.",
   "deleteAccountActiveSubTitle": "Active subscription",
@@ -626,7 +668,7 @@
   "lockBiometricPrompt": "Unlock Scenes",
   "lockForgotPin": "Forgot PIN?",
   "lockForgotConfirmTitle": "Sign Out?",
-  "lockForgotConfirmBody": "Signing out will turn off App Lock. After signing in again, you'll need to set it up from Settings.",
+  "lockForgotConfirmBody": "Signing out will turn off App Lock.\nAfter signing in again, you'll need to set it up from Settings.",
   "lockForgotConfirmAction": "Sign Out",
   "lockDisableConfirmTitle": "Turn Off App Lock?",
   "lockDisableConfirmBody": "PIN and biometric settings will be cleared.",
