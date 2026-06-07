@@ -36,6 +36,16 @@ export function SceneDetailView({
   const types: MediaType[] = ["photo", "film", "music", "place"];
   const metaItems = types.filter((t) => scene.media[t] > 0);
 
+  // 2열 masonry를 JS로 분배(높이 균형). CSS `columns`는 WebKit/인앱 브라우저에서
+  // 2번째 열 첫 항목이 클리핑되는 버그가 있어 flex 컬럼으로 직접 구성.
+  const cols: DetailItem[][] = [[], []];
+  const colHeights = [0, 0];
+  for (const item of items) {
+    const c = colHeights[0] <= colHeights[1] ? 0 : 1;
+    cols[c].push(item);
+    colHeights[c] += 1 / (item.aspect || 1); // 세로 비중(폭 동일 가정)
+  }
+
   return (
     <main className="min-h-dvh select-none bg-background text-foreground">
       <header className="px-6 pb-8 pt-6 text-center">
@@ -95,9 +105,13 @@ export function SceneDetailView({
           No shared moments in this scene.
         </p>
       ) : (
-        <div className="mx-auto max-w-2xl columns-2 gap-2 px-4 pb-16 [&>*]:mb-2">
-          {items.map((item) => (
-            <DetailTile key={item.id} item={item} />
+        <div className="mx-auto flex max-w-2xl gap-2 px-4 pb-16">
+          {cols.map((col, ci) => (
+            <div key={ci} className="flex flex-1 flex-col gap-2">
+              {col.map((item) => (
+                <DetailTile key={item.id} item={item} />
+              ))}
+            </div>
           ))}
         </div>
       )}
@@ -105,10 +119,10 @@ export function SceneDetailView({
   );
 }
 
-/// masonry 타일 — CSS columns 안에서 break-inside-avoid. 타입별 비율 유지.
+/// masonry 타일 — 타입별 비율 유지. (2열 분배는 부모가 담당.)
 function DetailTile({ item }: { item: DetailItem }) {
   return (
-    <div className="relative break-inside-avoid overflow-hidden rounded-xl bg-surface ring-1 ring-foreground/5">
+    <div className="relative overflow-hidden rounded-xl bg-surface ring-1 ring-foreground/5">
       {item.imageUrl ? (
         <img
           src={item.imageUrl}
