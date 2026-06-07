@@ -1,3 +1,4 @@
+import { redirect } from "react-router";
 import type { Route } from "./+types/scene-detail";
 import { createSupabaseAdminClient } from "../lib/supabase.server";
 import {
@@ -95,6 +96,11 @@ export async function loader({ params }: Route.LoaderArgs) {
     .eq("shared", true)
     .order("position", { ascending: true });
   const contents = contentsRaw ?? [];
+
+  // 공유된 moment가 하나도 없는 scene이면 상세를 보여줄 게 없으므로 페어 홈으로.
+  if (contents.length === 0) {
+    throw redirect(`/${slug}`);
+  }
 
   // 상단 캐니스터용 대표 이미지: cover 우선, 없으면 첫 공유 moment 이미지.
   let coverUrl: string | null = null;
