@@ -1,6 +1,7 @@
 import type { Route } from "./+types/share";
 import { createSupabaseAdminClient } from "../lib/supabase.server";
 import { ShareView } from "../features/share/share-view";
+import { contentImageRef } from "../lib/share-media";
 
 export function meta({ data }: Route.MetaArgs) {
   const title = data?.title ?? "Scenes";
@@ -107,7 +108,8 @@ export async function loader({ params }: Route.LoaderArgs) {
     film: number;
     music: number;
     place: number;
-    firstImage?: string;
+    firstPath?: string; // 서명할 scene_media 경로
+    firstUrl?: string; // 외부 CDN URL(음악 앨범아트 등)
     dates: number[];
   };
   const agg = new Map<string, Agg>();
@@ -123,10 +125,10 @@ export async function loader({ params }: Route.LoaderArgs) {
       a[type] += 1;
     }
     if (c.occurred_at) a.dates.push(new Date(c.occurred_at as string).getTime());
-    if (!a.firstImage) {
-      const payload = (c.payload ?? {}) as Record<string, unknown>;
-      const path = (payload.thumb_path ?? payload.storage_path) as string | undefined;
-      if (typeof path === "string" && path.length > 0) a.firstImage = path;
+    if (!a.firstPath && !a.firstUrl) {
+      const ref = contentImageRef(type, (c.payload ?? {}) as Record<string, unknown>);
+      if (ref.path) a.firstPath = ref.path;
+      else if (ref.url) a.firstUrl = ref.url;
     }
   }
 
@@ -135,14 +137,14 @@ export async function loader({ params }: Route.LoaderArgs) {
   const result = await Promise.all(
     sharedScenes.map(async (s) => {
       const a = agg.get(s.id as string)!;
-      let coverUrl: string | null = null;
-      // 대표 이미지(cover) 우선, 없으면 첫 공유 moment 이미지.
-      const path = (s.cover_storage_path as string | null) ?? a.firstImage ?? null;
+      let coverUrl: string | null = a.firstUrl ?? null; // 외부 URL fallback
+      // 대표 이미지(cover) 우선, 없으면 첫 공유 moment의 scene_media 경로.
+      const path = (s.cover_storage_path as string | null) ?? a.firstPath ?? null;
       if (path) {
         const { data } = await admin.storage
           .from(BUCKET)
           .createSignedUrl(path, SIGN_TTL);
-        coverUrl = data?.signedUrl ?? null;
+        if (data?.signedUrl) coverUrl = data.signedUrl;
       }
       return {
         id: s.id as string,

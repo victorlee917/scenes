@@ -6,6 +6,7 @@ import {
   type DetailItem,
 } from "../features/share/scene-detail-view";
 import type { MediaType } from "../features/share/media-icon";
+import { contentImageRef } from "../lib/share-media";
 
 const BUCKET = "scene_media";
 const SIGN_TTL = 60 * 60; // 1h
@@ -102,22 +103,29 @@ export async function loader({ params }: Route.LoaderArgs) {
     throw redirect(`/${slug}`);
   }
 
-  // 상단 캐니스터용 대표 이미지: cover 우선, 없으면 첫 공유 moment 이미지.
+  // 상단 캐니스터용 대표 이미지: scene cover 우선, 없으면 첫 공유 moment 이미지.
   let coverUrl: string | null = null;
-  let coverPath = (scene.cover_storage_path as string | null) ?? null;
-  if (!coverPath) {
+  const coverStoragePath = scene.cover_storage_path as string | null;
+  if (coverStoragePath) {
+    const { data } = await admin.storage
+      .from(BUCKET)
+      .createSignedUrl(coverStoragePath, SIGN_TTL);
+    coverUrl = data?.signedUrl ?? null;
+  }
+  if (!coverUrl) {
     for (const c of contents) {
-      const p = (c.payload ?? {}) as Record<string, unknown>;
-      const cand = (p.thumb_path ?? p.storage_path) as string | undefined;
-      if (typeof cand === "string" && cand.length > 0) {
-        coverPath = cand;
+      const ref = contentImageRef(c.type as string, (c.payload ?? {}) as Record<string, unknown>);
+      if (ref.path) {
+        const { data } = await admin.storage.from(BUCKET).createSignedUrl(ref.path, SIGN_TTL);
+        if (data?.signedUrl) {
+          coverUrl = data.signedUrl;
+          break;
+        }
+      } else if (ref.url) {
+        coverUrl = ref.url;
         break;
       }
     }
-  }
-  if (coverPath) {
-    const { data } = await admin.storage.from(BUCKET).createSignedUrl(coverPath, SIGN_TTL);
-    coverUrl = data?.signedUrl ?? null;
   }
 
   const dates: number[] = [];
@@ -131,21 +139,12 @@ export async function loader({ params }: Route.LoaderArgs) {
 
       const payload = (c.payload ?? {}) as Record<string, unknown>;
 
-      // 이미지 URL: scene_media 버킷 경로면 서명, 아니면 외부 CDN URL(예: 음악
-      // 앨범아트) 사용.
-      let imageUrl: string | null = null;
-      const path = (payload.thumb_path ?? payload.storage_path) as string | undefined;
-      if (typeof path === "string" && path.length > 0) {
-        const { data } = await admin.storage.from(BUCKET).createSignedUrl(path, SIGN_TTL);
-        imageUrl = data?.signedUrl ?? null;
-      } else {
-        for (const k of ["image_url", "album_image", "cover_url", "thumbnail_url", "image", "url"]) {
-          const v = payload[k];
-          if (typeof v === "string" && v.startsWith("http")) {
-            imageUrl = v;
-            break;
-          }
-        }
+      // 이미지 URL: 타입별 키로 scene_media 경로면 서명, 외부 CDN URL이면 그대로.
+      const ref = contentImageRef(type, payload);
+      let imageUrl: string | null = ref.url;
+      if (ref.path) {
+        const { data } = await admin.storage.from(BUCKET).createSignedUrl(ref.path, SIGN_TTL);
+        if (data?.signedUrl) imageUrl = data.signedUrl;
       }
 
       let aspect = 1;

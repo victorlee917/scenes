@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useNavigation,
 } from "react-router";
 
 import type { Route } from "./+types/root";
@@ -70,8 +71,30 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
+/// 페이지 전환(로더 fetch) 중 상단 인디터미네이트 로딩 바. 캐니스터 탭 →
+/// 상세 이동처럼 SSR 로더를 기다리는 동안 "눌렀는데 반응 없는" 느낌을 없앤다.
+function NavLoadingBar() {
+  const navigation = useNavigation();
+  const active = navigation.state !== "idle";
+  return (
+    <div
+      aria-hidden
+      className={`pointer-events-none fixed inset-x-0 top-0 z-[9999] h-0.5 overflow-hidden transition-opacity duration-200 ${
+        active ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <div className="h-full w-1/3 animate-[nav-indeterminate_1.1s_ease-in-out_infinite] bg-foreground/80" />
+    </div>
+  );
+}
+
 export default function App() {
-  return <Outlet />;
+  return (
+    <>
+      <NavLoadingBar />
+      <Outlet />
+    </>
+  );
 }
 
 export function ErrorBoundary({ error }: Route.ErrorBoundaryProps) {

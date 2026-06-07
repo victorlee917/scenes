@@ -62,3 +62,23 @@ html,
 body {
   @apply bg-background text-foreground font-sans antialiased;
 }
+
+/* 스크롤바 숨김(스크롤 기능은 유지). */
+html {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* old Edge/IE */
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none; /* WebKit */
+}
+
+/* 페이지 전환 로딩 바 — 좌→우로 흐르는 인디터미네이트 세그먼트. */
+@keyframes nav-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
