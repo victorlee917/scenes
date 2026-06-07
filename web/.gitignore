@@ -5,3 +5,6 @@
 # React Router
 /.react-router/
 /build/
+
+# Vercel (로컬 링크/빌드 산출물)
+/.vercel/

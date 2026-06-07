@@ -4,13 +4,11 @@
 class AppUrls {
   const AppUrls._();
 
-  /// 개인정보 처리 방침. GitHub Pages SPA의 `/scenes/privacy` 라우트.
-  static const String privacyPolicy =
-      'https://victorlee917.github.io/scenes/privacy';
+  /// 개인정보 처리 방침. scenes.id 웹의 `/privacy` 라우트.
+  static const String privacyPolicy = 'https://scenes.id/privacy';
 
-  /// 서비스 이용 약관. GitHub Pages SPA의 `/scenes/terms` 라우트.
-  static const String termsOfService =
-      'https://victorlee917.github.io/scenes/terms';
+  /// 서비스 이용 약관. scenes.id 웹의 `/terms` 라우트.
+  static const String termsOfService = 'https://scenes.id/terms';
 
   /// Scenes 인스타그램 계정.
   static const String instagram =
@@ -21,4 +19,18 @@ class AppUrls {
   /// 지역 스토어로 자동 리다이렉트(US 고정 방지).
   static const String appDownload =
       'https://apps.apple.com/app/id6767381832';
+
+  /// 커플 공유 페이지 base. 뒤에 커플 닉네임(slug)을 붙여 공유 URL을 만든다
+  /// (`${shareBaseUrl}<slug>`). 도메인 바로 뒤에 slug가 온다(`scenes.id/<slug>`).
+  /// 표시·복사·공유 모두 이 base를 사용 — 도메인 변경 시 여기만 갱신. trailing
+  /// slash 포함.
+  static const String shareBaseUrl = 'https://scenes.id/';
+
+  /// 공유 URL의 표시용(스킴 제거) 형태. 카드/시트에서 `scenes.id/<slug>`로
+  /// 짧게 보여줄 때 사용.
+  static String shareDisplayUrl(String slug) =>
+      '${shareBaseUrl.replaceFirst(RegExp(r'^https?://'), '')}$slug';
+
+  /// 복사·공유에 쓰는 전체 URL.
+  static String shareFullUrl(String slug) => '$shareBaseUrl$slug';
 }

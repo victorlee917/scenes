@@ -355,7 +355,7 @@
     "placeholders": {
       "link": {
         "type": "String",
-        "example": "https://victorlee917.github.io/scenes"
+        "example": "https://scenes.id"
       },
       "code": {
         "type": "String",
@@ -524,6 +524,21 @@
   "subscriptionTagline": "Make our scenes more vivid",
   "subscriptionBannerTaglineActive": "Making our scenes more vivid.",
   "subscriptionBannerLearnMore": "Learn more",
+  "shareCardTagline": "Show friends our story.",
+  "@shareCardTagline": {
+    "description": "Profile share card subtitle — entry point to manage the shared webpage."
+  },
+  "shareCardSetPrompt": "Set a nickname to share",
+  "shareAddressLabel": "Your address",
+  "shareIdSetNeeded": "Set your ID",
+  "shareIdChange": "Change ID",
+  "shareLinkCopied": "Link copied",
+  "shareNicknameSheetDesc": "This becomes your shared page address.",
+  "shareNicknameAvailable": "Available",
+  "shareNicknameTaken": "Already taken",
+  "shareNicknameInvalid": "3–30 letters, numbers, or hyphens",
+  "shareNicknameChangeWarning": "Changing this breaks your current link.",
+  "shareNicknameSaveFailed": "Couldn't save. Please try again.",
   "subscriptionFeaturePairTitle": "One for two",
   "subscriptionFeaturePairDesc": "When just one of you subscribes, Scenes HD unlocks for both.",
   "subscriptionFeatureMomentTypesTitle": "More Moment Types",

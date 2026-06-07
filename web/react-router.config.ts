@@ -1,15 +1,17 @@
 import type { Config } from "@react-router/dev/config";
+import { vercelPreset } from "@vercel/react-router/vite";
 
 /**
- * GitHub Pages는 정적 호스팅이라 SPA 모드로 빌드. 추후 Cloudflare/Vercel 등
- * SSR 가능한 호스팅으로 옮길 때 `ssr: true`로 되돌리면 됨.
+ * SSR 모드 + Vercel 배포. 공개 공유 페이지(/s/:slug)가 서버 loader에서
+ * service-role로 공유 데이터 + private 버킷 signed URL을 만들어야 하므로 SSR이
+ * 필요하다. Vercel preset이 빌드를 Vercel Functions 형태로 분할/출력한다.
  *
- * `basename`은 GH Pages가 `https://<user>.github.io/<repo>/` sub-path로 서빙
- * 하기 때문에 필요. Vite의 `base`는 asset URL에만 적용되고 React Router 런타임
- * 의 basename은 별개로 설정해야 sub-path 라우트(`/scenes/privacy` 등)가 매칭됨.
- * 추후 custom 도메인이나 user/org Pages(루트 서빙)로 옮기면 `/`로 변경.
+ * 루트 도메인 서빙 기준(*.vercel.app, 추후 scenes.app). basename은 `/`(기본)
+ * 이라 별도 지정하지 않는다 — 그래야 앱의 공유 URL(scenes.app/s/<id>)과 경로가
+ * 맞는다. (GH Pages 서브패스 `/scenes/`로 되돌릴 일이 있으면 vite base +
+ * basename을 함께 복구.)
  */
 export default {
-  ssr: false,
-  basename: "/scenes/",
+  ssr: true,
+  presets: [vercelPreset()],
 } satisfies Config;

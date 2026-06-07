@@ -678,6 +678,43 @@ class AppLocalizationsEn extends AppLocalizations {
   String get subscriptionBannerLearnMore => 'Learn more';
 
   @override
+  String get shareCardTagline => 'Show friends our story.';
+
+  @override
+  String get shareCardSetPrompt => 'Set a nickname to share';
+
+  @override
+  String get shareAddressLabel => 'Your address';
+
+  @override
+  String get shareIdSetNeeded => 'Set your ID';
+
+  @override
+  String get shareIdChange => 'Change ID';
+
+  @override
+  String get shareLinkCopied => 'Link copied';
+
+  @override
+  String get shareNicknameSheetDesc => 'This becomes your shared page address.';
+
+  @override
+  String get shareNicknameAvailable => 'Available';
+
+  @override
+  String get shareNicknameTaken => 'Already taken';
+
+  @override
+  String get shareNicknameInvalid => '3–30 letters, numbers, or hyphens';
+
+  @override
+  String get shareNicknameChangeWarning =>
+      'Changing this breaks your current link.';
+
+  @override
+  String get shareNicknameSaveFailed => 'Couldn\'t save. Please try again.';
+
+  @override
   String get subscriptionFeaturePairTitle => 'One for two';
 
   @override

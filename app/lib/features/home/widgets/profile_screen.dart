@@ -1,15 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../../core/theme/app_colors.dart';
+import '../../../core/constants/app_urls.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
+import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../l10n/app_localizations.dart';
@@ -20,6 +21,7 @@ import '../../profile/profile_view_model.dart';
 import '../../settings/settings_screen.dart';
 import 'edit_profile_sheet.dart';
 import '../../share/share_settings_screen.dart';
+import '../../share/share_view_model.dart';
 import '../../subscription/subscription_screen.dart';
 import '../../subscription/subscription_view_model.dart';
 import '../home_view_model.dart';
@@ -64,7 +66,6 @@ class ProfileScreen extends ConsumerStatefulWidget {
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> {
   final ScrollController _scrollController = ScrollController();
-  bool _shareEnabled = false;
 
   @override
   void dispose() {
@@ -289,17 +290,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ),
                     ),
                   ),
-                  // TODO: Share our Scenes 섹션. 오픈 스펙에서 제외.
-                  // const SizedBox(height: 36),
-                  // _divider(context),
-                  // const SizedBox(height: 36),
-                  // FadeTransition(
-                  //   opacity: routeAnim,
-                  //   child: _ShareSection(
-                  //     enabled: _shareEnabled,
-                  //     onToggle: (v) => setState(() => _shareEnabled = v),
-                  //   ),
-                  // ),
                   const SizedBox(height: 36),
                   _divider(context),
                   const SizedBox(height: 36),
@@ -307,6 +297,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     opacity: routeAnim,
                     child: const CreditSection(),
                   ),
+                  FadeTransition(
+                    opacity: routeAnim,
+                    child: const _ShareCard(),
+                  ),
+                  const SizedBox(height: 12),
                   FadeTransition(
                     opacity: routeAnim,
                     child: const _ScenesMaxBanner(),
@@ -492,129 +487,138 @@ Widget _divider(BuildContext context) => Center(
       ),
     );
 
-class _ShareSection extends StatelessWidget {
-  const _ShareSection({
-    required this.enabled,
-    required this.onToggle,
-  });
-
-  final bool enabled;
-  final ValueChanged<bool> onToggle;
+/// 프로필의 공유 페이지 카드. 바로 아래 [_ScenesMaxBanner](Scenes HD 배너)와
+/// 동일한 카드 스타일을 공유해 한 묶음으로 읽히게 한다.
+///
+/// 두 가지 상태:
+///   * 공유 닉네임 미설정 → "설정 필요" 안내. 탭하면 설정 시트.
+///   * 닉네임 있음 → `scenes.id/<닉네임>` 표시 + 복사. 탭하면 편집 시트.
+class _ShareCard extends ConsumerWidget {
+  const _ShareCard();
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: context.colors.clickableArea,
-        borderRadius: AppRadii.mdBorder,
-        border: Border.all(
-          color: context.colors.foreground.withValues(alpha: 0.04),
-          width: 0.5,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final slug = ref.watch(shareSlugProvider).valueOrNull;
+    final hasSlug = slug != null && slug.isNotEmpty;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).push(ShareSettingsScreen.route()),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          borderRadius: AppRadii.sheetInnerBorder,
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              context.colors.surface,
+              context.colors.surfaceElevated,
+            ],
+            stops: const [0.0, 0.6],
+          ),
+          border: Border.all(
+            color: context.colors.foreground.withValues(alpha: 0.06),
+            width: 0.5,
+          ),
         ),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Share our Scenes',
-                      style: AppTypography.body(16, weight: FontWeight.w600)
-                          .copyWith(color: context.colors.foreground),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Show friends our story.',
-                      style: AppTypography.body(13).copyWith(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Share our Scenes',
+              style: AppTypography.display(20).copyWith(
+                color: context.colors.foreground,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            SizedBox(height: hasSlug ? 18 : 12),
+            if (hasSlug)
+              _ShareUrlRow(slug: slug)
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      l10n.shareCardSetPrompt,
+                      style: AppTypography.body(14).copyWith(
                         color: context.colors.foregroundMuted,
                       ),
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Switch.adaptive(
-                value: enabled,
-                onChanged: onToggle,
-              ),
-            ],
-          ),
-          if (enabled) ...[
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              decoration: BoxDecoration(
-                borderRadius: AppRadii.smBorder,
-                color: context.colors.foreground.withValues(alpha: 0.04),
-                border: Border.all(
-                  color: context.colors.foreground.withValues(alpha: 0.06),
-                  width: 0.5,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        launchUrl(
-                          Uri.parse('https://scenes.app/s/sora-jun'),
-                          mode: LaunchMode.externalApplication,
-                        );
-                      },
-                      child: Text(
-                        'scenes.app/s/sora-jun',
-                        style: AppTypography.body(14).copyWith(
-                          color: context.colors.foreground,
-                        ),
-                      ),
-                    ),
                   ),
-                  GestureDetector(
-                    onTap: () {
-                      SharePlus.instance.share(
-                        ShareParams(
-                          uri: Uri.parse('https://scenes.app/s/sora-jun'),
-                        ),
-                      );
-                    },
-                    child: FaIcon(
-                      FontAwesomeIcons.shareFromSquare,
-                      size: 16,
-                      color: context.colors.foreground.withValues(alpha: 0.7),
-                    ),
+                  const SizedBox(width: 12),
+                  FaIcon(
+                    FontAwesomeIcons.chevronRight,
+                    size: 14,
+                    color: context.colors.foreground.withValues(alpha: 0.4),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () {
-                Navigator.of(context).push(ShareSettingsScreen.route());
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(
-                  borderRadius: AppRadii.smBorder,
-                  color: context.colors.foreground.withValues(alpha: 0.06),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 설정된 공유 URL 표시 + 복사. 카드 탭(편집 시트)과 분리되도록 복사 버튼은
+/// 자체 GestureDetector로 탭을 가로챈다.
+class _ShareUrlRow extends StatelessWidget {
+  const _ShareUrlRow({required this.slug});
+
+  final String slug;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: AppRadii.smBorder,
+        color: context.colors.foreground.withValues(alpha: 0.04),
+        border: Border.all(
+          color: context.colors.foreground.withValues(alpha: 0.06),
+          width: 0.5,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              // 주소 탭 → 인앱 브라우저(SFSafariViewController / Custom Tabs).
+              onTap: () => launchUrl(
+                Uri.parse(AppUrls.shareFullUrl(slug)),
+                mode: LaunchMode.inAppBrowserView,
+              ),
+              child: Text(
+                AppUrls.shareDisplayUrl(slug),
+                style: AppTypography.body(14).copyWith(
+                  color: context.colors.foreground,
                 ),
-                alignment: Alignment.center,
-                child: Text(
-                  'Manage visibility',
-                  style: AppTypography.body(13, weight: FontWeight.w500)
-                      .copyWith(color: context.colors.foreground),
-                ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-          ],
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              await Clipboard.setData(
+                ClipboardData(text: AppUrls.shareFullUrl(slug)),
+              );
+              if (context.mounted) {
+                AppToast.show(context, l10n.shareLinkCopied);
+              }
+            },
+            child: FaIcon(
+              FontAwesomeIcons.solidCopy,
+              size: 15,
+              color: context.colors.foreground.withValues(alpha: 0.7),
+            ),
+          ),
         ],
       ),
     );

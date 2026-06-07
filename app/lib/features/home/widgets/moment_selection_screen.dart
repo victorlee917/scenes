@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -19,6 +21,7 @@ class MomentSelectionScreen extends ConsumerStatefulWidget {
     super.key,
     this.initiallySelected = const <String>{},
     this.sceneIdFilter,
+    this.selectAllWhenEmpty = true,
   });
 
   final Set<String> initiallySelected;
@@ -27,9 +30,14 @@ class MomentSelectionScreen extends ConsumerStatefulWidget {
   /// 값이 있으면 해당 scene id에 속한 콘텐츠만 그리드에 노출.
   final Set<String>? sceneIdFilter;
 
+  /// initiallySelected가 비었을 때 동작. 재생 선택은 true(빈=전체 재생 의도라
+  /// 모두 선택으로 보임), 공유 대상 선택은 false(빈=아무것도 공유 안 함).
+  final bool selectAllWhenEmpty;
+
   static Route<Set<String>> route({
     Set<String> initiallySelected = const <String>{},
     Set<String>? sceneIdFilter,
+    bool selectAllWhenEmpty = true,
   }) {
     return PageRouteBuilder<Set<String>>(
       opaque: false,
@@ -39,6 +47,7 @@ class MomentSelectionScreen extends ConsumerStatefulWidget {
           MomentSelectionScreen(
         initiallySelected: initiallySelected,
         sceneIdFilter: sceneIdFilter,
+        selectAllWhenEmpty: selectAllWhenEmpty,
       ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
@@ -74,7 +83,8 @@ class _MomentSelectionScreenState
   void initState() {
     super.initState();
     _selected = Set<String>.from(widget.initiallySelected);
-    _autoSelectAll = widget.initiallySelected.isEmpty;
+    _autoSelectAll =
+        widget.selectAllWhenEmpty && widget.initiallySelected.isEmpty;
   }
 
   void _close() => Navigator.of(context).pop();
@@ -100,6 +110,20 @@ class _MomentSelectionScreenState
   bool _isTileSelected(String id) {
     if (_autoSelectAll && !_seeded) return true;
     return _selected.contains(id);
+  }
+
+  bool _isAllSelected(List<_MomentItem> moments) {
+    if (_autoSelectAll && !_seeded) return true;
+    return moments.isNotEmpty && moments.every((m) => _selected.contains(m.id));
+  }
+
+  void _toggleSelectAll(List<_MomentItem> moments) {
+    final selectAll = !_isAllSelected(moments);
+    setState(() {
+      _seeded = true;
+      _autoSelectAll = false;
+      _selected = selectAll ? moments.map((m) => m.id).toSet() : <String>{};
+    });
   }
 
   /// scope 안의 scene들에 대해 contentsForSceneProvider를 watch해 실제 DB
@@ -148,12 +172,16 @@ class _MomentSelectionScreenState
     final hasSelection = (_autoSelectAll && !_seeded)
         ? moments.isNotEmpty
         : _selected.isNotEmpty;
+    // 공유 대상 선택(selectAllWhenEmpty=false)은 "아무것도 공유 안 함"도 유효한
+    // 결과이므로 빈 선택이어도 Done 가능. 재생 선택은 1개 이상 필요.
+    final canDone = widget.selectAllWhenEmpty ? hasSelection : true;
 
     return Scaffold(
       backgroundColor: context.colors.background,
       body: Stack(
         children: [
-          // 그리드는 풀스크린, 상단은 앱바 높이만큼 패딩.
+          // 그리드는 풀스크린, 상단은 앱바 높이만큼 패딩. 하단은 플로팅
+          // Select all pill에 가리지 않도록 여유 패딩.
           Positioned.fill(
             child: isLoading
                 ? Padding(
@@ -186,7 +214,7 @@ class _MomentSelectionScreenState
                           16,
                           padding.top + DetailAppBar.barHeight + 16,
                           16,
-                          padding.bottom + 24,
+                          padding.bottom + 80,
                         ),
                         gridDelegate:
                             const SliverGridDelegateWithFixedCrossAxisCount(
@@ -206,6 +234,20 @@ class _MomentSelectionScreenState
                         },
                       ),
           ),
+          // 하단 중앙 플로팅 Select all/Deselect all pill (앨범 선택 버튼과 동일
+          // 한 glass 스타일).
+          if (!isLoading && moments.isNotEmpty)
+            Positioned(
+              bottom: padding.bottom + 16,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _FloatingSelectAll(
+                  allSelected: _isAllSelected(moments),
+                  onToggle: () => _toggleSelectAll(moments),
+                ),
+              ),
+            ),
           // 상단 그라데이션 + 앱바 (콘텐츠가 그 아래로 비치며 fade out).
           Positioned(
             top: 0,
@@ -219,11 +261,11 @@ class _MomentSelectionScreenState
               borderOpacity: 0,
               trailing: GestureDetector(
                 behavior: HitTestBehavior.opaque,
-                // 선택된 게 없으면 onTap=null로 비활성. AnimatedOpacity로 dim
+                // 확정 불가 상태면 onTap=null로 비활성. AnimatedOpacity로 dim
                 // 처리해 시각적으로 비활성을 알림.
-                onTap: hasSelection ? _apply : null,
+                onTap: canDone ? _apply : null,
                 child: AnimatedOpacity(
-                  opacity: hasSelection ? 1.0 : 0.4,
+                  opacity: canDone ? 1.0 : 0.4,
                   duration: const Duration(milliseconds: 200),
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(8, 14, 8, 14),
@@ -238,6 +280,44 @@ class _MomentSelectionScreenState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 하단 중앙에 떠 있는 전체 선택/해제 토글 pill. add photo 화면의 앨범 선택
+/// 버튼과 동일한 glass 스타일(blur + clickableArea 틴트 + xl radius).
+class _FloatingSelectAll extends StatelessWidget {
+  const _FloatingSelectAll({required this.allSelected, required this.onToggle});
+
+  final bool allSelected;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onToggle,
+      child: ClipRRect(
+        borderRadius: AppRadii.xlBorder,
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.colors.clickableArea.withValues(alpha: 0.82),
+              borderRadius: AppRadii.xlBorder,
+              border: Border.all(
+                color: context.colors.foreground.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
+            ),
+            child: Text(
+              allSelected ? 'Deselect all' : 'Select all',
+              style: AppTypography.body(14, weight: FontWeight.w500)
+                  .copyWith(color: context.colors.foreground),
+            ),
+          ),
+        ),
       ),
     );
   }

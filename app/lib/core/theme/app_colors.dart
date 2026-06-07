@@ -45,6 +45,7 @@ class AppColorPalette {
     required this.filmStock,
     required this.gradientBase,
     required this.shadow,
+    required this.danger,
   });
 
   final Color background;
@@ -65,6 +66,10 @@ class AppColorPalette {
   /// 적용된 값이라 BoxShadow에 그대로 넣어 쓰면 됨.
   final Color shadow;
 
+  /// 부정/파괴/오류 상태 강조색 (탈퇴 버튼, 닉네임 "이미 사용 중" 등).
+  /// 앱에서 유일하게 쓰는 accent — 그 외 UI는 모노톤 유지.
+  final Color danger;
+
   static const dark = AppColorPalette._(
     background: Color(0xFF151517),
     surface: Color(0xFF1E1E21),
@@ -81,6 +86,7 @@ class AppColorPalette {
     // 거리가 짧아져 그림자 끝나는 지점이 visible boundary로 보이는 "층진"
     // 인상이 됨. spread/blur가 자연스럽게 fade를 만들도록 색은 진하게.
     shadow: Color(0xFF000000),
+    danger: Color(0xFFDC3545), // 앱 공통 destructive red
   );
 
   static const light = AppColorPalette._(
@@ -98,5 +104,6 @@ class AppColorPalette {
     // 라이트 배경에선 full opacity warm dark가 너무 진해 캐니스터 그림자가
     // 카드 같이 보임 — 0x33(20%)로 낮춰 은은하게.
     shadow: Color(0x331A1A1C),
+    danger: Color(0xFFDC3545), // 앱 공통 destructive red
   );
 }

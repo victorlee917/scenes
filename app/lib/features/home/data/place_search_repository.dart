@@ -12,7 +12,7 @@ import '../models/place_hit.dart';
 ///
 /// - [domestic]: Kakao 로컬 검색(EF `kakao-local-search`). 한국 장소 데이터
 ///   품질이 월등하지만 데이터가 한국 한정.
-/// - [overseas]: 기존 경로(iOS Apple / 그 외 Mapbox). 전 세계 커버.
+/// - [overseas]: 글로벌 경로(iOS Apple / Android Google Places). 전 세계 커버.
 enum PlaceSearchMode { domestic, overseas }
 
 /// 디바이스 region이 한국인지. "국내/해외" 토글 노출 + 기본 모드 판정에 쓴다.
@@ -29,8 +29,10 @@ bool isDomesticDeviceLocale() {
 ///   한국 데이터 한정이지만 POI 품질이 최상. 무료(할당량 기반).
 /// - **해외 모드 · iOS**: Apple Maps `MKLocalSearch` (platform channel
 ///   `app.scenes/place_search`). 외부 비용 0. Apple MapKit attribution 필요.
-/// - **해외 모드 · 그 외(Android 등)**: Mapbox Geocoding via EF `mapbox-geocode`.
-///   iOS native 동급 무료 API가 없어 fallback. 단가 발생.
+///   단, 앱 locale ≠ 디바이스 primary locale이면 일관 표기를 위해 Mapbox
+///   Geocoding(EF `mapbox-geocode`)으로 폴백.
+/// - **해외 모드 · Android(그 외)**: Google Places API (New) Text Search via
+///   EF `google-places-search`. iOS native 동급 무료 API가 없어 사용. 단가 발생.
 ///
 /// 저장 시점에는 모드·platform과 무관하게 `mapbox-static-cache` Edge Function이
 /// 정적지도를 1회 캐싱(content_repository에서 호출). 검색 소스가 무엇이든
@@ -62,7 +64,7 @@ class PlaceSearchRepository {
     final List<PlaceHit> results;
     if (mode == PlaceSearchMode.domestic) {
       results = await _searchViaKakao(trimmed, locale: locale);
-    } else {
+    } else if (Platform.isIOS) {
       // iOS의 MKLocalSearch는 결과 텍스트를 디바이스 OS 언어로만 돌려주고
       // request 단위로 language를 override할 공개 API가 없음. 그래서 앱 locale
       // ≠ 디바이스 primary locale이면 Apple Maps로는 일관된 표기 보장 불가 —
@@ -70,10 +72,13 @@ class PlaceSearchRepository {
       final deviceLang =
           ui.PlatformDispatcher.instance.locale.languageCode.toLowerCase();
       final requestedLang = locale.toLowerCase().split('-').first;
-      final canUseApple = Platform.isIOS && deviceLang == requestedLang;
-      results = canUseApple
+      results = deviceLang == requestedLang
           ? await _searchViaAppleMaps(trimmed, locale: locale)
           : await _searchViaMapbox(trimmed, locale: locale);
+    } else {
+      // Android 등: iOS native 동급이 없어 Google Places(New) Text Search를
+      // EF 경유로 사용. 키워드→좌표·주소를 단일 호출로 받아 PlaceHit로 정규화.
+      results = await _searchViaGooglePlaces(trimmed, locale: locale);
     }
     // 모든 경로가 실패를 빈 리스트로 swallow하므로 비어있지 않은 결과만
     // 캐싱 — 일시적 네트워크 실패가 캐시에 굳지 않게.
@@ -132,6 +137,28 @@ class PlaceSearchRepository {
     try {
       final response = await _client.functions.invoke(
         'mapbox-geocode',
+        body: {'query': query, 'locale': locale},
+      );
+      final data = response.data;
+      if (data is! Map<String, dynamic>) return const [];
+      final raw = data['results'];
+      if (raw is! List) return const [];
+      return raw
+          .whereType<Map<String, dynamic>>()
+          .map(PlaceHit.fromJson)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<List<PlaceHit>> _searchViaGooglePlaces(
+    String query, {
+    required String locale,
+  }) async {
+    try {
+      final response = await _client.functions.invoke(
+        'google-places-search',
         body: {'query': query, 'locale': locale},
       );
       final data = response.data;

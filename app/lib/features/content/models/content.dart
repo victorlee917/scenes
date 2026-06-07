@@ -17,6 +17,7 @@ class Content {
     required this.createdBy,
     required this.createdAt,
     this.occurredAt,
+    this.shared = false,
     this.fullSignedUrl,
     this.thumbSignedUrl,
   });
@@ -39,6 +40,10 @@ class Content {
 
   /// 사진 촬영 시각 등 "콘텐츠 자체의 발생 시각". null 가능.
   final DateTime? occurredAt;
+
+  /// 공유 페이지 노출 여부. 기본 false(옵트인). 페어 멤버 누구나 토글 가능
+  /// (`set_scene_shared_contents` RPC).
+  final bool shared;
 
   /// scene_media full variant 1h signed URL. listing 시 함께 받아둠.
   final String? fullSignedUrl;
@@ -66,6 +71,7 @@ class Content {
         createdBy: createdBy,
         createdAt: createdAt,
         occurredAt: occurredAt ?? this.occurredAt,
+        shared: shared,
         fullSignedUrl: fullSignedUrl ?? this.fullSignedUrl,
         thumbSignedUrl: thumbSignedUrl ?? this.thumbSignedUrl,
       );
@@ -82,6 +88,7 @@ class Content {
       occurredAt: json['occurred_at'] == null
           ? null
           : DateTime.parse(json['occurred_at'] as String),
+      shared: json['shared'] as bool? ?? false,
     );
   }
 }

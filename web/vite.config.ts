@@ -3,15 +3,11 @@ import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
 /**
- * GitHub Pages는 `https://<user>.github.io/<repo>/` sub-path로 서빙되므로
- * Vite의 `base`에 repo 이름을 박아둔다. 추후 custom 도메인 또는 user/org
- * Pages(루트 서빙)으로 옮기면 `/`로 변경.
- *
- * `base`만 설정하면 React Router v7이 동일 base를 router basename으로
- * 자동 인식 — 별도 basename 지정 불필요.
+ * 루트 도메인 서빙(Vercel: *.vercel.app, 추후 scenes.app). asset/route 모두
+ * 루트(`/`) 기준이라 `base`를 따로 지정하지 않는다. (GH Pages 서브패스
+ * `/scenes/`로 되돌릴 경우 여기 base + react-router.config basename을 함께 복구.)
  */
 export default defineConfig({
-  base: "/scenes/",
   plugins: [tailwindcss(), reactRouter()],
   resolve: {
     tsconfigPaths: true,

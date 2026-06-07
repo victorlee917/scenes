@@ -171,7 +171,7 @@ export const privacyEn: LegalContent = {
     { type: "h2", text: "10. Contact" },
     {
       type: "p",
-      text: "If you have questions about this Privacy Policy or wish to exercise any of the rights described above, please contact us at: support@scenes.app",
+      text: "If you have questions about this Privacy Policy or wish to exercise any of the rights described above, please contact us at: tapas.maker@gmail.com",
     },
   ],
 };

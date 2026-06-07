@@ -221,8 +221,8 @@ class _DeleteAccountConfirmSheetState
                     decoration: BoxDecoration(
                       borderRadius: AppRadii.sheetInnerBorder,
                       color: matches && !_busy
-                          ? const Color(0xFFDC3545)
-                          : const Color(0xFFDC3545).withValues(alpha: 0.3),
+                          ? context.colors.danger
+                          : context.colors.danger.withValues(alpha: 0.3),
                     ),
                     child: Center(
                       child: _busy

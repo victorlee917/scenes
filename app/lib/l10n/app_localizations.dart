@@ -1315,6 +1315,78 @@ abstract class AppLocalizations {
   /// **'Learn more'**
   String get subscriptionBannerLearnMore;
 
+  /// Profile share card subtitle — entry point to manage the shared webpage.
+  ///
+  /// In en, this message translates to:
+  /// **'Show friends our story.'**
+  String get shareCardTagline;
+
+  /// No description provided for @shareCardSetPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Set a nickname to share'**
+  String get shareCardSetPrompt;
+
+  /// No description provided for @shareAddressLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your address'**
+  String get shareAddressLabel;
+
+  /// No description provided for @shareIdSetNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'Set your ID'**
+  String get shareIdSetNeeded;
+
+  /// No description provided for @shareIdChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change ID'**
+  String get shareIdChange;
+
+  /// No description provided for @shareLinkCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Link copied'**
+  String get shareLinkCopied;
+
+  /// No description provided for @shareNicknameSheetDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'This becomes your shared page address.'**
+  String get shareNicknameSheetDesc;
+
+  /// No description provided for @shareNicknameAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get shareNicknameAvailable;
+
+  /// No description provided for @shareNicknameTaken.
+  ///
+  /// In en, this message translates to:
+  /// **'Already taken'**
+  String get shareNicknameTaken;
+
+  /// No description provided for @shareNicknameInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'3–30 letters, numbers, or hyphens'**
+  String get shareNicknameInvalid;
+
+  /// No description provided for @shareNicknameChangeWarning.
+  ///
+  /// In en, this message translates to:
+  /// **'Changing this breaks your current link.'**
+  String get shareNicknameChangeWarning;
+
+  /// No description provided for @shareNicknameSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t save. Please try again.'**
+  String get shareNicknameSaveFailed;
+
   /// No description provided for @subscriptionFeaturePairTitle.
   ///
   /// In en, this message translates to:

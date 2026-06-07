@@ -661,6 +661,42 @@ class AppLocalizationsKo extends AppLocalizations {
   String get subscriptionBannerLearnMore => '자세히 보기';
 
   @override
+  String get shareCardTagline => '우리 이야기를 친구들에게 보여주세요.';
+
+  @override
+  String get shareCardSetPrompt => '공유하려면 닉네임을 설정하세요';
+
+  @override
+  String get shareAddressLabel => '공유 주소';
+
+  @override
+  String get shareIdSetNeeded => 'id 설정 필요';
+
+  @override
+  String get shareIdChange => 'id 변경';
+
+  @override
+  String get shareLinkCopied => '링크를 복사했어요';
+
+  @override
+  String get shareNicknameSheetDesc => '공유 페이지 주소로 사용돼요.';
+
+  @override
+  String get shareNicknameAvailable => '사용 가능';
+
+  @override
+  String get shareNicknameTaken => '이미 사용 중';
+
+  @override
+  String get shareNicknameInvalid => '영문·숫자·하이픈 3~30자';
+
+  @override
+  String get shareNicknameChangeWarning => '변경하면 현재 링크가 끊겨요.';
+
+  @override
+  String get shareNicknameSaveFailed => '저장에 실패했어요. 다시 시도해 주세요.';
+
+  @override
   String get subscriptionFeaturePairTitle => '우리는 하나';
 
   @override

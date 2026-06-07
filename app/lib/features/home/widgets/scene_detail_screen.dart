@@ -7,7 +7,6 @@ import 'package:intl/intl.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:shimmer/shimmer.dart';
 
-import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
@@ -282,7 +281,6 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
                           opacity: routeAnim,
                           child: _DetailActionRow(
                             showPlay: scene.media.total > 0,
-                            onShare: () {},
                             onAddMedia: () {
                               AddMediaSheet.show(
                                 context: context,
@@ -1156,13 +1154,11 @@ class _GhostTile extends StatelessWidget {
 
 class _DetailActionRow extends StatelessWidget {
   const _DetailActionRow({
-    required this.onShare,
     required this.onAddMedia,
     required this.onPlay,
     required this.showPlay,
   });
 
-  final VoidCallback onShare;
   final VoidCallback onAddMedia;
   final VoidCallback onPlay;
 
@@ -1181,7 +1177,6 @@ class _DetailActionRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // TODO: Share 버튼. 오픈 스펙에서 제외.
         GlassCircleButton(
           size: buttonSize,
           onTap: onAddMedia,

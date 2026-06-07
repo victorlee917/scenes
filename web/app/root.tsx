@@ -40,7 +40,7 @@ export const links: Route.LinksFunction = () => [
 // 소셜 미디어 카드용 절대 URL. og:image 등은 path가 아니라 풀 URL이라야
 // 스크래퍼(페이스북·트위터·슬랙 등)가 이미지를 가져갈 수 있음. 추후 커스텀
 // 도메인으로 옮기면 여기만 바꾸면 됨.
-const _siteOrigin = "https://victorlee917.github.io/scenes";
+const _siteOrigin = "https://scenes.id";
 const _ogImageUrl = `${_siteOrigin}/og-image.png`;
 
 export function Layout({ children }: { children: React.ReactNode }) {

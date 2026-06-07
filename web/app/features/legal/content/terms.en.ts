@@ -152,7 +152,7 @@ export const termsEn: LegalContent = {
     { type: "h2", text: "14. Contact" },
     {
       type: "p",
-      text: "For questions about these Terms, please contact us at: support@scenes.app",
+      text: "For questions about these Terms, please contact us at: tapas.maker@gmail.com",
     },
   ],
 };

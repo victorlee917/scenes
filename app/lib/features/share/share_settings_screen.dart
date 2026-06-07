@@ -1,17 +1,33 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/theme/app_colors.dart';
+import '../../core/constants/app_urls.dart';
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_typography.dart';
+import '../../core/widgets/app_toast.dart';
+import '../../l10n/app_localizations.dart';
+import '../content/contents_view_model.dart';
+import '../content/models/content.dart';
+import '../home/home_view_model.dart';
+import '../home/models/scene.dart';
 import '../home/widgets/detail_app_bar.dart';
+import '../home/widgets/moment_selection_screen.dart';
+import '../home/widgets/scene_row_tile.dart';
+import 'data/share_repository.dart';
+import 'share_view_model.dart';
+import 'widgets/set_share_slug_sheet.dart';
 
-/// Share our Scenes 노출 관리 화면.
+/// 공유 관리(상세) 화면.
 ///
-/// 공유 페이지에 표시할 항목을 개별 토글로 관리한다.
-class ShareSettingsScreen extends StatefulWidget {
+/// 최소 정보만 표시한다:
+///   1. 공유 주소 카드 — "your address" 라벨 + URL 복사(id 없으면 "id 설정 필요"),
+///      그리고 같은 카드 안에 id 변경 진입(id 있을 때만).
+///   2. 안내 — 공유 노출은 각 Scene에서 개별 설정.
+class ShareSettingsScreen extends ConsumerStatefulWidget {
   const ShareSettingsScreen({super.key});
 
   static Route<void> route() {
@@ -21,17 +37,11 @@ class ShareSettingsScreen extends StatefulWidget {
   }
 
   @override
-  State<ShareSettingsScreen> createState() => _ShareSettingsScreenState();
+  ConsumerState<ShareSettingsScreen> createState() =>
+      _ShareSettingsScreenState();
 }
 
-class _ShareSettingsScreenState extends State<ShareSettingsScreen> {
-  bool _showPhotos = true;
-  bool _showVideos = true;
-  bool _showFilms = true;
-  bool _showMusic = true;
-  bool _showBooks = true;
-  bool _showPlaces = true;
-  bool _showDates = true;
+class _ShareSettingsScreenState extends ConsumerState<ShareSettingsScreen> {
   double _borderOpacity = 0.0;
 
   bool _onScroll(ScrollNotification n) {
@@ -42,9 +52,35 @@ class _ShareSettingsScreenState extends State<ShareSettingsScreen> {
     return false;
   }
 
+  void _openSheet({String? currentSlug}) {
+    SetShareSlugSheet.show(context: context, currentSlug: currentSlug);
+  }
+
+  Future<void> _copy(String slug) async {
+    await Clipboard.setData(
+      ClipboardData(text: AppUrls.shareFullUrl(slug)),
+    );
+    if (mounted) {
+      AppToast.show(context, AppLocalizations.of(context).shareLinkCopied);
+    }
+  }
+
+  /// 주소 탭 → 인앱 브라우저(SFSafariViewController / Custom Tabs)로 공유
+  /// 페이지 열기.
+  Future<void> _open(String slug) async {
+    await launchUrl(
+      Uri.parse(AppUrls.shareFullUrl(slug)),
+      mode: LaunchMode.inAppBrowserView,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
+    final slug = ref.watch(shareSlugProvider).valueOrNull;
+    // 최신 Scene이 위로 오도록 역순.
+    final scenes =
+        ref.watch(homeViewModelProvider.select((s) => s.scenes)).reversed.toList();
 
     return Scaffold(
       // backgroundColor handled by theme
@@ -54,57 +90,31 @@ class _ShareSettingsScreenState extends State<ShareSettingsScreen> {
             onNotification: _onScroll,
             child: ListView(
               padding: EdgeInsets.only(
-                top: padding.top + DetailAppBar.barHeight + 16,
+                top: padding.top + DetailAppBar.barHeight + 24,
                 bottom: padding.bottom + 40,
               ),
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 공유 주소 카드 (라벨 + 복사 + id 변경)
+                      _AddressCard(
+                        slug: slug,
+                        onCopy: slug != null ? () => _copy(slug) : () {},
+                        onOpen: slug != null ? () => _open(slug) : () {},
+                        onSet: () => _openSheet(),
+                        onChange: () => _openSheet(currentSlug: slug),
+                      ),
+                    ],
                   ),
-                  child: Text(
-                    'Choose what to show on your shared webpage.',
-                    style: AppTypography.body(14).copyWith(
-                      color: context.colors.foregroundMuted,
-                    ),
-                  ),
                 ),
-                _VisibilityTile(
-                  label: 'Photos',
-                  value: _showPhotos,
-                  onChanged: (v) => setState(() => _showPhotos = v),
-                ),
-                _VisibilityTile(
-                  label: 'Videos',
-                  value: _showVideos,
-                  onChanged: (v) => setState(() => _showVideos = v),
-                ),
-                _VisibilityTile(
-                  label: 'Films',
-                  value: _showFilms,
-                  onChanged: (v) => setState(() => _showFilms = v),
-                ),
-                _VisibilityTile(
-                  label: 'Music',
-                  value: _showMusic,
-                  onChanged: (v) => setState(() => _showMusic = v),
-                ),
-                _VisibilityTile(
-                  label: 'Books',
-                  value: _showBooks,
-                  onChanged: (v) => setState(() => _showBooks = v),
-                ),
-                _VisibilityTile(
-                  label: 'Places',
-                  value: _showPlaces,
-                  onChanged: (v) => setState(() => _showPlaces = v),
-                ),
-                _VisibilityTile(
-                  label: 'Dates',
-                  value: _showDates,
-                  onChanged: (v) => setState(() => _showDates = v),
-                ),
+
+                // 3) Scene 목록 — 탭하면 해당 Scene의 공유 대상 콘텐츠 선택
+                //    화면(재생 선택과 동일 디자인)으로 이동.
+                const SizedBox(height: 24),
+                for (final scene in scenes) _ShareSceneRow(scene: scene),
               ],
             ),
           ),
@@ -135,111 +145,213 @@ class _ShareSettingsScreenState extends State<ShareSettingsScreen> {
               ),
             ),
           ),
-
-          // 하단 고정 — 링크 공유 영역
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                left: 24,
-                right: 24,
-                top: 20,
-                bottom: padding.bottom + 24,
-              ),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.bottomCenter,
-                  end: Alignment.topCenter,
-                  colors: [
-                    Color(0xFF151517),
-                    Color(0xE6151517),
-                    Color(0x94151517),
-                    Color(0x00151517),
-                  ],
-                  stops: [0.0, 0.5, 0.8, 1.0],
-                ),
-              ),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  borderRadius: AppRadii.smBorder,
-                  color: context.colors.clickableArea,
-                  border: Border.all(
-                    color: context.colors.foreground.withValues(alpha: 0.06),
-                    width: 0.5,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        'scenes.app/s/sora-jun',
-                        style: AppTypography.body(14).copyWith(
-                          color: context.colors.foreground,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        SharePlus.instance.share(
-                          ShareParams(
-                            uri: Uri.parse(
-                                'https://scenes.app/s/sora-jun'),
-                          ),
-                        );
-                      },
-                      child: FaIcon(
-                        FontAwesomeIcons.shareFromSquare,
-                        size: 16,
-                        color:
-                            context.colors.foreground.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 }
 
-class _VisibilityTile extends StatelessWidget {
-  const _VisibilityTile({
-    required this.label,
-    required this.value,
-    required this.onChanged,
-  });
+/// 공유 화면의 Scene 한 행. 해당 scene의 콘텐츠를 읽어 `{공유}/{전체}`를 왼쪽에
+/// 표시하고, 탭하면 공유 대상 선택 화면([MomentSelectionScreen])으로 이동한 뒤
+/// 돌아온 선택을 RPC로 저장한다.
+class _ShareSceneRow extends ConsumerWidget {
+  const _ShareSceneRow({required this.scene});
 
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
+  final Scene scene;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final contents =
+        ref.watch(contentsForSceneProvider(scene.id)).valueOrNull ??
+            const <Content>[];
+    final sharedIds =
+        contents.where((c) => c.shared).map((c) => c.id).toSet();
+    final total = scene.media.total;
+
+    return SceneRowTile(
+      scene: scene,
+      horizontalPadding: 24,
+      trailingLabel: '${sharedIds.length}/$total',
+      onTap: () async {
+        final result = await Navigator.of(context).push(
+          MomentSelectionScreen.route(
+            sceneIdFilter: {scene.id},
+            initiallySelected: sharedIds,
+            // 공유는 옵트인 — 빈 선택은 "아무것도 공유 안 함".
+            selectAllWhenEmpty: false,
+          ),
+        );
+        if (result == null) return;
+        await ref.read(shareRepositoryProvider).setSceneSharedContents(
+              sceneId: scene.id,
+              sharedIds: result,
+            );
+        // 카운트 갱신을 위해 해당 scene 콘텐츠 refetch.
+        ref.invalidate(contentsForSceneProvider(scene.id));
+      },
+    );
+  }
+}
+
+/// 카드 안에서 URL/프롬프트를 감싸는 둥근 inner 컨테이너(chip). 프로필 카드의
+/// URL chip과 동일한 스타일을 공유해 앱 전반과 일관성을 유지.
+class _AddressChip extends StatelessWidget {
+  const _AddressChip({required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
-      child: Row(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: AppRadii.smBorder,
+        color: context.colors.foreground.withValues(alpha: 0.04),
+        border: Border.all(
+          color: context.colors.foreground.withValues(alpha: 0.06),
+          width: 0.5,
+        ),
+      ),
+      child: child,
+    );
+  }
+}
+
+/// 공유 주소 카드. "your address" 라벨 아래에 복사 영역, 그리고 같은 카드 안에
+/// id 변경 진입까지 묶는다.
+///   * id 있음 → URL + 복사 아이콘, 하단에 divider + "change id" 행.
+///   * id 없음 → "id 설정 필요" + chevron(탭하면 설정 시트).
+class _AddressCard extends StatelessWidget {
+  const _AddressCard({
+    required this.slug,
+    required this.onCopy,
+    required this.onOpen,
+    required this.onSet,
+    required this.onChange,
+  });
+
+  /// 현재 닉네임(id). null이면 미설정.
+  final String? slug;
+  final VoidCallback onCopy;
+  final VoidCallback onOpen;
+  final VoidCallback onSet;
+  final VoidCallback onChange;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final slug = this.slug;
+    final hasSlug = slug != null && slug.isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: context.colors.clickableArea,
+        borderRadius: AppRadii.mdBorder,
+        border: Border.all(
+          color: context.colors.foreground.withValues(alpha: 0.06),
+          width: 0.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: AppTypography.body(15).copyWith(
-                color: context.colors.foreground,
-              ),
+          Text(
+            l10n.shareAddressLabel,
+            style: AppTypography.body(12).copyWith(
+              color: context.colors.foregroundMuted,
             ),
           ),
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-          ),
+          const SizedBox(height: 10),
+
+          // 복사 영역 (or 설정 필요) — 카드 안 둥근 inner 컨테이너(chip)로 감쌈.
+          // 프로필 카드의 URL chip과 동일 스타일(sm radius, foreground 0.04).
+          if (hasSlug)
+            _AddressChip(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onOpen,
+                      child: Text(
+                        AppUrls.shareDisplayUrl(slug),
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.body(15).copyWith(
+                          color: context.colors.foreground,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onCopy,
+                    child: FaIcon(
+                      FontAwesomeIcons.solidCopy,
+                      size: 15,
+                      color: context.colors.foreground.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onSet,
+              child: _AddressChip(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.shareIdSetNeeded,
+                        style: AppTypography.body(15).copyWith(
+                          color: context.colors.foregroundMuted,
+                        ),
+                      ),
+                    ),
+                    FaIcon(
+                      FontAwesomeIcons.chevronRight,
+                      size: 14,
+                      color: context.colors.foreground.withValues(alpha: 0.4),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // id 변경 — 같은 카드 안, divider로 구분 (id 있을 때만)
+          if (hasSlug) ...[
+            const SizedBox(height: 14),
+            Container(
+              height: 0.5,
+              color: context.colors.foreground.withValues(alpha: 0.06),
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onChange,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        l10n.shareIdChange,
+                        style: AppTypography.body(14, weight: FontWeight.w500)
+                            .copyWith(color: context.colors.foreground),
+                      ),
+                    ),
+                    FaIcon(
+                      FontAwesomeIcons.chevronRight,
+                      size: 13,
+                      color: context.colors.foreground.withValues(alpha: 0.4),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
