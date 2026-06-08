@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import { Link } from "react-router";
 import { MediaIcon, type MediaType } from "./media-icon";
+import { SourceBadge } from "./source-badge";
 import { CoupleTelescope, type ShareCouple } from "./share-view";
 
 /// Scene 상세 — 앱의 콘텐츠 상세(2열 masonry + 타입별 비율 이미지)를 웹으로 옮김.
@@ -135,6 +136,11 @@ function DetailTile({ item }: { item: DetailItem }) {
       ) : (
         <div className="w-full" style={{ aspectRatio: item.aspect }} />
       )}
+
+      {/* 외부 매체 출처 배지 — 앱과 동일하게 우상단(6px). photo는 없음. */}
+      <div className="absolute right-1.5 top-1.5">
+        <SourceBadge type={item.type} />
+      </div>
 
       {item.type === "place" && item.name && (
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2 text-left text-xs font-medium text-white">
