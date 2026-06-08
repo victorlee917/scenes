@@ -59,12 +59,13 @@ class PurchasesRepository {
       _log('configure: skipped (platform != iOS)');
       return;
     }
-    const key = String.fromEnvironment('REVENUECAT_IOS_API_KEY');
+    // RevenueCat 공개 SDK 키(appl_)는 앱 임베드가 설계상 정상인 공개값이라
+    // (entitlement 부여 불가, 결제는 Apple 영수증 검증을 거침) 하드코딩한다.
+    // Sentry DSN과 동일 컨벤션 — dart-define 누락으로 결제가 조용히 꺼지는
+    // 사고(평범한 `flutter build ipa`에 키가 빠지는 함정)를 방지.
+    const key = 'appl_WmEjIANyKfMSyijtOEAmSFmXeSV';
     if (key.isEmpty) {
-      _log(
-        'configure: SKIPPED — REVENUECAT_IOS_API_KEY dart-define empty. '
-        'Subscription features will be inert.',
-      );
+      _log('configure: SKIPPED — RevenueCat key empty.');
       return;
     }
     try {

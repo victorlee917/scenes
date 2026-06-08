@@ -2,11 +2,14 @@ import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import '../../../core/constants/app_urls.dart';
 import '../../../core/theme/app_colors_ext.dart';
 import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
@@ -14,6 +17,8 @@ import '../../../core/widgets/app_toast.dart';
 import '../../../core/widgets/confirm_dialog.dart';
 import '../../../core/widgets/floating_action_sheet.dart';
 import '../../../core/widgets/floating_bottom_sheet.dart';
+import '../../share/data/share_repository.dart';
+import '../../share/share_view_model.dart';
 import '../../content/data/content_repository.dart';
 import '../../content/contents_view_model.dart';
 import '../../content/models/content.dart';
@@ -30,6 +35,7 @@ import '../../subscription/subscription_view_model.dart';
 import 'add_media_sheet.dart';
 import 'content_viewer_v2.dart';
 import 'create_scene_sheet.dart';
+import 'moment_selection_screen.dart';
 import 'play_scene_screen.dart';
 import 'play_scene_sheet.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -212,6 +218,9 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
         ) ??
         widget.scene;
 
+    // 공유 id(slug)가 설정된 페어만 공유 버튼 노출.
+    final shareSlug = ref.watch(shareSlugProvider).valueOrNull;
+
     return Scaffold(
       // backgroundColor handled by theme
       body: Stack(
@@ -281,6 +290,9 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
                           opacity: routeAnim,
                           child: _DetailActionRow(
                             showPlay: scene.media.total > 0,
+                            onShare: (shareSlug != null && shareSlug.isNotEmpty)
+                                ? () => _openShareSheet(scene, shareSlug)
+                                : null,
                             onAddMedia: () {
                               AddMediaSheet.show(
                                 context: context,
@@ -391,6 +403,14 @@ class _SceneDetailScreenState extends ConsumerState<SceneDetailScreen> {
             ) ??
         widget.scene;
     CreateSceneSheet.show(context: context, editScene: latest);
+  }
+
+  /// 공유 시트 — 이 Scene의 공유 링크 + 공유된 moment 수 + moment 선택 진입.
+  void _openShareSheet(Scene scene, String slug) {
+    FloatingBottomSheet.show<void>(
+      context: context,
+      builder: (_) => _ShareSceneSheet(scene: scene, slug: slug),
+    );
   }
 
   void _handleMoreActions() {
@@ -1157,6 +1177,7 @@ class _DetailActionRow extends StatelessWidget {
     required this.onAddMedia,
     required this.onPlay,
     required this.showPlay,
+    this.onShare,
   });
 
   final VoidCallback onAddMedia;
@@ -1164,6 +1185,9 @@ class _DetailActionRow extends StatelessWidget {
 
   /// 콘텐츠가 하나라도 있을 때만 재생 버튼 표시.
   final bool showPlay;
+
+  /// 공유 id(slug)가 있는 페어만 non-null → 공유 버튼 표시.
+  final VoidCallback? onShare;
 
   @override
   Widget build(BuildContext context) {
@@ -1200,7 +1224,189 @@ class _DetailActionRow extends StatelessWidget {
             ),
           ),
         ],
+        if (onShare != null) ...[
+          SizedBox(width: gap),
+          GlassCircleButton(
+            size: buttonSize,
+            onTap: onShare!,
+            semanticLabel: l10n.sceneDetailShare,
+            child: FaIcon(
+              FontAwesomeIcons.arrowUpFromBracket,
+              size: iconSize,
+              color: iconColor,
+            ),
+          ),
+        ],
       ],
+    );
+  }
+}
+
+/// 공유 시트 본문 — 이 Scene의 공유 링크, 공유된 moment 수, moment 선택 버튼.
+/// contentsForSceneProvider를 watch해 moment 선택 후 돌아오면 카운트가 갱신된다.
+class _ShareSceneSheet extends ConsumerWidget {
+  const _ShareSceneSheet({required this.scene, required this.slug});
+
+  final Scene scene;
+  final String slug;
+
+  Future<void> _copy(BuildContext context) async {
+    await Clipboard.setData(
+      ClipboardData(text: AppUrls.shareSceneFullUrl(slug, scene.number)),
+    );
+    if (context.mounted) {
+      AppToast.show(context, AppLocalizations.of(context).shareLinkCopied);
+    }
+  }
+
+  /// 링크 탭 → 인앱 브라우저로 해당 Scene 공유 페이지 열기.
+  Future<void> _open() async {
+    await launchUrl(
+      Uri.parse(AppUrls.shareSceneFullUrl(slug, scene.number)),
+      mode: LaunchMode.inAppBrowserView,
+    );
+  }
+
+  /// 공유 대상 moment 선택 화면으로 → 돌아온 선택을 RPC로 저장 후 카운트 갱신.
+  Future<void> _selectMoments(
+    BuildContext context,
+    WidgetRef ref,
+    Set<String> sharedIds,
+  ) async {
+    final result = await Navigator.of(context).push(
+      MomentSelectionScreen.route(
+        sceneIdFilter: {scene.id},
+        initiallySelected: sharedIds,
+        // 공유는 옵트인 — 빈 선택은 "아무것도 공유 안 함".
+        selectAllWhenEmpty: false,
+      ),
+    );
+    if (result == null) return;
+    await ref.read(shareRepositoryProvider).setSceneSharedContents(
+          sceneId: scene.id,
+          sharedIds: result,
+        );
+    ref.invalidate(contentsForSceneProvider(scene.id));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final contents =
+        ref.watch(contentsForSceneProvider(scene.id)).valueOrNull ??
+            const <Content>[];
+    final sharedIds = contents.where((c) => c.shared).map((c) => c.id).toSet();
+    final total = scene.media.total;
+    final displayUrl = AppUrls.shareSceneDisplayUrl(slug, scene.number);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            // display 폰트 텍스트는 KO에서도 영문 유지 — ARB 키 만들지 않음
+            // (재생 시트 'Play Scene'/'Playback'과 동일 원칙).
+            'Share Scene',
+            textAlign: TextAlign.center,
+            style: AppTypography.display(20).copyWith(
+              color: context.colors.foreground,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 16),
+          // 공유된 moment가 0개면 아직 공개된 링크가 없으므로 URL 미표시.
+          if (sharedIds.isNotEmpty) ...[
+            // 링크 chip — radius는 시트 내 다른 카드와 동일(sheetInnerBorder).
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                borderRadius: AppRadii.sheetInnerBorder,
+                color: context.colors.foreground.withValues(alpha: 0.04),
+                border: Border.all(
+                  color: context.colors.foreground.withValues(alpha: 0.06),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _open,
+                      child: Text(
+                        displayUrl,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.body(15).copyWith(
+                          color: context.colors.foreground,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _copy(context),
+                    child: FaIcon(
+                      FontAwesomeIcons.solidCopy,
+                      size: 15,
+                      color: context.colors.foreground.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          // 재생(Playback) 시트의 "Select Moments" 행과 동일한 형식 — 라벨 +
+          // 공유 수 부제 + chevron. 탭하면 moment 선택 화면으로.
+          GestureDetector(
+            onTap: () => _selectMoments(context, ref, sharedIds),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: context.colors.clickableArea,
+                borderRadius: AppRadii.sheetInnerBorder,
+                border: Border.all(
+                  color: context.colors.foreground.withValues(alpha: 0.04),
+                  width: 0.5,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.shareSelectMoments,
+                          style: AppTypography.body(15, weight: FontWeight.w600)
+                              .copyWith(color: context.colors.foreground),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          l10n.shareSceneSharedCount(sharedIds.length, total),
+                          style: AppTypography.body(12).copyWith(
+                            color: context.colors.foregroundMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FaIcon(
+                    FontAwesomeIcons.chevronRight,
+                    size: 14,
+                    color: context.colors.foregroundMuted,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

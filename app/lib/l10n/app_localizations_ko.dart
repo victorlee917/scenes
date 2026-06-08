@@ -697,6 +697,17 @@ class AppLocalizationsKo extends AppLocalizations {
   String get shareNicknameSaveFailed => '저장에 실패했어요. 다시 시도해 주세요.';
 
   @override
+  String get shareSceneLinkLabel => 'Scene 링크';
+
+  @override
+  String shareSceneSharedCount(int shared, int total) {
+    return '$total개 중 $shared개 공유 중';
+  }
+
+  @override
+  String get shareSelectMoments => 'Moment 선택';
+
+  @override
   String get subscriptionFeaturePairTitle => '우리는 하나';
 
   @override

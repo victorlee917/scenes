@@ -1387,6 +1387,24 @@ abstract class AppLocalizations {
   /// **'Couldn\'t save. Please try again.'**
   String get shareNicknameSaveFailed;
 
+  /// No description provided for @shareSceneLinkLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Scene link'**
+  String get shareSceneLinkLabel;
+
+  /// How many moments in this scene are shared.
+  ///
+  /// In en, this message translates to:
+  /// **'{shared} of {total} moments shared'**
+  String shareSceneSharedCount(int shared, int total);
+
+  /// No description provided for @shareSelectMoments.
+  ///
+  /// In en, this message translates to:
+  /// **'Select moments'**
+  String get shareSelectMoments;
+
   /// No description provided for @subscriptionFeaturePairTitle.
   ///
   /// In en, this message translates to:

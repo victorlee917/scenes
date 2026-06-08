@@ -539,6 +539,16 @@
   "shareNicknameInvalid": "3–30 letters, numbers, or hyphens",
   "shareNicknameChangeWarning": "Changing this breaks your current link.",
   "shareNicknameSaveFailed": "Couldn't save. Please try again.",
+  "shareSceneLinkLabel": "Scene link",
+  "shareSceneSharedCount": "{shared} of {total} moments shared",
+  "@shareSceneSharedCount": {
+    "description": "How many moments in this scene are shared.",
+    "placeholders": {
+      "shared": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "shareSelectMoments": "Select moments",
   "subscriptionFeaturePairTitle": "One for two",
   "subscriptionFeaturePairDesc": "When just one of you subscribes, Scenes HD unlocks for both.",
   "subscriptionFeatureMomentTypesTitle": "More Moment Types",

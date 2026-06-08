@@ -715,6 +715,17 @@ class AppLocalizationsEn extends AppLocalizations {
   String get shareNicknameSaveFailed => 'Couldn\'t save. Please try again.';
 
   @override
+  String get shareSceneLinkLabel => 'Scene link';
+
+  @override
+  String shareSceneSharedCount(int shared, int total) {
+    return '$shared of $total moments shared';
+  }
+
+  @override
+  String get shareSelectMoments => 'Select moments';
+
+  @override
   String get subscriptionFeaturePairTitle => 'One for two';
 
   @override

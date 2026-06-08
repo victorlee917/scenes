@@ -33,4 +33,12 @@ class AppUrls {
 
   /// 복사·공유에 쓰는 전체 URL.
   static String shareFullUrl(String slug) => '$shareBaseUrl$slug';
+
+  /// 특정 Scene의 공유 URL — 웹 라우트 `scenes.id/<slug>/<sceneNumber>`와 일치.
+  static String shareSceneFullUrl(String slug, int sceneNumber) =>
+      '$shareBaseUrl$slug/$sceneNumber';
+
+  /// 특정 Scene 공유 URL의 표시용(스킴 제거) 형태.
+  static String shareSceneDisplayUrl(String slug, int sceneNumber) =>
+      '${shareDisplayUrl(slug)}/$sceneNumber';
 }

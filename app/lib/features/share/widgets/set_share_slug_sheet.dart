@@ -200,7 +200,8 @@ class _SetShareSlugSheetState extends ConsumerState<SetShareSlugSheet> {
                     ),
                     decoration: InputDecoration(
                       isDense: true,
-                      hintText: 'sora-jun',
+                      // 형식 예시(소문자·하이픈). 실제 유저 slug를 쓰지 않는다.
+                      hintText: 'you-and-me',
                       hintStyle: AppTypography.body(15).copyWith(
                         color:
                             context.colors.foregroundMuted.withValues(alpha: 0.4),
@@ -258,7 +259,9 @@ class _SetShareSlugSheetState extends ConsumerState<SetShareSlugSheet> {
           widget.currentSlug != null ? l10n.shareNicknameChangeWarning : '',
           context.colors.foregroundMuted,
         ),
-      _ => ('', context.colors.foregroundMuted),
+      // idle(입력 전)·checking 모두 형식 가이드를 그대로 노출 — 한 글자
+      // 입력해야 뜨던 동작을 처음부터 보이게. invalid와 동일 문구라 깜빡임 없음.
+      _ => (l10n.shareNicknameInvalid, context.colors.foregroundMuted),
     };
     if (text.isEmpty) return const SizedBox.shrink();
     return Text(

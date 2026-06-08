@@ -538,23 +538,11 @@ class _ShareCard extends ConsumerWidget {
             if (hasSlug)
               _ShareUrlRow(slug: slug)
             else
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.shareCardSetPrompt,
-                      style: AppTypography.body(14).copyWith(
-                        color: context.colors.foregroundMuted,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  FaIcon(
-                    FontAwesomeIcons.chevronRight,
-                    size: 14,
-                    color: context.colors.foreground.withValues(alpha: 0.4),
-                  ),
-                ],
+              Text(
+                l10n.shareCardSetPrompt,
+                style: AppTypography.body(14).copyWith(
+                  color: context.colors.foregroundMuted,
+                ),
               ),
           ],
         ),

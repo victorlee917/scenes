@@ -214,6 +214,16 @@
   "shareNicknameInvalid": "영문·숫자·하이픈 3~30자",
   "shareNicknameChangeWarning": "변경하면 현재 링크가 끊겨요.",
   "shareNicknameSaveFailed": "저장에 실패했어요. 다시 시도해 주세요.",
+  "shareSceneLinkLabel": "Scene 링크",
+  "shareSceneSharedCount": "{total}개 중 {shared}개 공유 중",
+  "@shareSceneSharedCount": {
+    "description": "How many moments in this scene are shared.",
+    "placeholders": {
+      "shared": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "shareSelectMoments": "Moment 선택",
   "subscriptionFeaturePairTitle": "우리는 하나",
   "subscriptionFeaturePairDesc": "한 명만 구독해도 Scenes HD가 적용돼요.",
   "subscriptionFeatureMomentTypesTitle": "더 많은 Moment 타입",
