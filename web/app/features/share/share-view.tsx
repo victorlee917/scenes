@@ -186,7 +186,10 @@ function SceneDial({
 
   return (
     <div
-      className="flex flex-1 flex-col touch-pan-y"
+      // touch-none: 카카오 등 인앱 WebView가 가로 스와이프를 스크롤로 오인해
+      // pointercancel을 쏘면 드래그가 끊겨 원래 인덱스로 튕긴다. 홈은 한 화면이라
+      // 세로 스크롤이 필요 없으므로 브라우저 제스처를 전부 막아 드래그를 보장.
+      className="flex flex-1 flex-col touch-none"
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
