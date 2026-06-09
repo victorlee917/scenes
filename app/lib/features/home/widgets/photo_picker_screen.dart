@@ -70,11 +70,11 @@ class PhotoPickerScreen extends ConsumerStatefulWidget {
       reverseTransitionDuration: const Duration(milliseconds: 280),
       pageBuilder: (context, animation, secondaryAnimation) =>
           PhotoPickerScreen(
-        scene: scene,
-        momentDate: momentDate,
-        landOnSceneDetail: landOnSceneDetail,
-        maxSelection: maxSelection,
-      ),
+            scene: scene,
+            momentDate: momentDate,
+            landOnSceneDetail: landOnSceneDetail,
+            maxSelection: maxSelection,
+          ),
       transitionsBuilder: (context, animation, secondaryAnimation, child) {
         final curved = CurvedAnimation(
           parent: animation,
@@ -98,10 +98,8 @@ class PhotoPickerScreen extends ConsumerStatefulWidget {
 
 class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
   // picker 성능 상한과 widget.maxSelection(scene의 남은 slot) 중 작은 값.
-  int get _maxSelection => widget.maxSelection.clamp(
-        1,
-        PhotoPickerScreen._kDefaultMaxSelection,
-      );
+  int get _maxSelection =>
+      widget.maxSelection.clamp(1, PhotoPickerScreen._kDefaultMaxSelection);
 
   List<AssetPathEntity> _albums = [];
   AssetPathEntity? _currentAlbum;
@@ -139,6 +137,10 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
   // 으로 그려지지만, 상단 _PreviewTile row와 _selected 자체는 건드리지 않음.
   // 드래그 종료 시 _selected에 commit.
   List<AssetEntity>? _dragPreviewSelected;
+  // 사진 상세(프리뷰) 모드. null이면 그리드, 값이 있으면 _assets[해당 index]
+  // 부터 보는 풀스크린 프리뷰를 앱바 아래에 오버레이로 띄운다. 별도 라우트가
+  // 아니라 같은 화면 안에 두어 상단 앱바(타이틀·Save)가 그대로 유지된다.
+  int? _previewIndex;
   // grid-content 좌표(스크롤 오프셋 포함). origin은 down 시점, current는 마지막
   // pan update.
   Offset? _dragOrigin;
@@ -536,7 +538,9 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
     }
     if (_selected.isEmpty) return;
 
-    ref.read(uploadQueueProvider.notifier).enqueuePhotos(
+    ref
+        .read(uploadQueueProvider.notifier)
+        .enqueuePhotos(
           sceneId: scene.id,
           sceneTitle: scene.title,
           assets: List.of(_selected),
@@ -558,17 +562,8 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
   void _previewPhoto(AssetEntity asset) {
     final initialIndex = _assets.indexOf(asset);
     if (initialIndex < 0) return;
-    Navigator.of(context).push(
-      _PhotoPreviewScreen.route(
-        assets: _assets,
-        initialIndex: initialIndex,
-        getSelected: () => _dragPreviewSelected ?? _selected,
-        getMaxSelection: () => _maxSelection,
-        onToggle: (asset) {
-          _toggleSelect(asset);
-        },
-      ),
-    );
+    // 앱바를 유지하기 위해 별도 라우트가 아니라 같은 화면 오버레이로 연다.
+    setState(() => _previewIndex = initialIndex);
   }
 
   @override
@@ -577,253 +572,293 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
     final l10n = AppLocalizations.of(context);
     final hasSelection = _selected.isNotEmpty;
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          Column(
-            children: [
-              SizedBox(height: padding.top + DetailAppBar.barHeight),
+    return PopScope(
+      // 프리뷰(오버레이)가 열려 있으면 뒤로가기/스와이프백이 picker 전체를 닫지
+      // 않고 프리뷰만 닫도록 가로챈다. (별도 라우트가 아니라 같은 화면 오버레이)
+      canPop: _previewIndex == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _previewIndex != null) {
+          setState(() => _previewIndex = null);
+        }
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Column(
+              children: [
+                SizedBox(height: padding.top + DetailAppBar.barHeight),
 
-              // 선택된 사진 미리보기 — 드래그 종료 후 확정된 _selected 기준.
-              // 드래그 중엔 _selected를 안 건드려서 layout shift 안 일어남.
-              if (hasSelection)
-                SizedBox(
-                  height: 88,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    itemCount: _selected.length,
-                    itemBuilder: (context, index) {
-                      final previewAsset = _selected[index];
-                      return _PreviewTile(
-                        asset: previewAsset,
-                        thumbFuture: _getThumb(previewAsset, 200),
-                        onRemove: () => _removeFromSelection(previewAsset),
-                      );
-                    },
-                  ),
-                ),
-
-              if (hasSelection)
-                Container(
-                  height: 0.5,
-                  color: context.colors.foreground.withValues(alpha: 0.06),
-                ),
-
-              // 그리드 갤러리
-              Expanded(
-                child: _loading
-                    ? Center(
-                        child: CircularProgressIndicator(
-                          color: context.colors.foreground,
-                          strokeWidth: 1.5,
-                        ),
-                      )
-                    : _assets.isEmpty
-                        ? Center(
-                            child: Text(
-                              l10n.photoPickerEmpty,
-                              style: AppTypography.body(14).copyWith(
-                                color: context.colors.foregroundMuted,
-                              ),
-                            ),
-                          )
-                        : LayoutBuilder(
-                            builder: (context, constraints) {
-                              // 셀 크기를 LayoutBuilder가 알려주는 폭으로 산출.
-                              // 드래그 hit-test가 같은 값을 사용하도록 캐싱.
-                              final innerWidth = constraints.maxWidth -
-                                  _kGridPadding * 2;
-                              final cellSide = (innerWidth -
-                                      _kGridSpacing *
-                                          (_kGridCols - 1)) /
-                                  _kGridCols;
-                              if (cellSide != _gridCellSide) {
-                                WidgetsBinding.instance.addPostFrameCallback(
-                                    (_) {
-                                  if (mounted) {
-                                    setState(() => _gridCellSide = cellSide);
-                                  }
-                                });
-                              }
-                              return RawGestureDetector(
-                                behavior: HitTestBehavior.deferToChild,
-                                // 마키는 long-press로만 시작 — 일반 vertical
-                                // swipe는 그리드 자체 스크롤로 가게 두고, 길게
-                                // 눌렀을 때만 selection drag 모드 진입.
-                                // GestureDetector는 long-press 시간을 못
-                                // 바꿔서 RawGestureDetector로 직접 구성.
-                                gestures: {
-                                  LongPressGestureRecognizer:
-                                      GestureRecognizerFactoryWithHandlers<
-                                          LongPressGestureRecognizer>(
-                                    () => LongPressGestureRecognizer(
-                                      duration: _kMarqueeLongPressDelay,
-                                    ),
-                                    (recognizer) {
-                                      recognizer.onLongPressStart =
-                                          _onMarqueeStart;
-                                      recognizer.onLongPressMoveUpdate =
-                                          _onMarqueeUpdate;
-                                      recognizer.onLongPressEnd =
-                                          (_) => _onMarqueeEnd();
-                                      recognizer.onLongPressCancel =
-                                          _onMarqueeEnd;
-                                    },
-                                  ),
-                                },
-                                child: GridView.builder(
-                                  key: _gridKey,
-                                  controller: _gridController,
-                                  padding:
-                                      const EdgeInsets.all(_kGridPadding),
-                                  // long-press 인식 전엔 일반 스와이프가 그리
-                                  // 드 스크롤로 가야 하므로 기본 physics. 마
-                                  // 키가 시작되면 long-press가 arena를 잡아
-                                  // 스크롤은 자동으로 멈추고, 가장자리 auto-
-                                  // scroll은 controller.jumpTo로 처리.
-                                  physics: const BouncingScrollPhysics(),
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: _kGridCols,
-                                    mainAxisSpacing: _kGridSpacing,
-                                    crossAxisSpacing: _kGridSpacing,
-                                  ),
-                                  itemCount: _assets.length,
-                                  itemBuilder: (context, index) {
-                                    // 드래그 중엔 preview 기준으로 그리고,
-                                    // 평소엔 확정된 _selected 기준.
-                                    final display = _dragPreviewSelected ??
-                                        _selected;
-                                    final asset = _assets[index];
-                                    final selIdx = display.indexOf(asset);
-                                    final isSelected = selIdx >= 0;
-                                    return _GalleryTile(
-                                      asset: asset,
-                                      selected: isSelected,
-                                      selectionOrder:
-                                          isSelected ? selIdx + 1 : 0,
-                                      thumbFuture: _getThumb(asset, 300),
-                                      onSelect: () => _toggleSelect(asset),
-                                      onTap: () => _previewPhoto(asset),
-                                    );
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-              ),
-            ],
-          ),
-
-          // 앱바
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: DetailAppBar(
-              topInset: padding.top,
-              title: l10n.photoPickerScreenTitle,
-              titleOpacity: 1.0,
-              useGradient: false,
-              onClose: () => Navigator.of(context).pop(),
-              // Save 라벨 옆에 '(n/limit)' 카운터 — 한 번에 올릴 수 있는
-              // 한도(min(20, scene 잔여 슬롯))가 분모. 한 라인에 같이 붙여서
-              // 읽힘새가 'Save (3/20)' 형태가 되도록 RichText로 합침.
-              trailing: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: hasSelection ? _save : null,
-                child: AnimatedOpacity(
-                  opacity: hasSelection ? 1.0 : 0.4,
-                  duration: const Duration(milliseconds: 200),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 12,
-                    ),
-                    child: RichText(
-                      text: TextSpan(
-                        style: AppTypography.body(15, weight: FontWeight.w600)
-                            .copyWith(color: context.colors.foreground),
-                        children: [
-                          TextSpan(text: l10n.actionSave),
-                          TextSpan(
-                            text:
-                                ' (${(_dragPreviewSelected ?? _selected).length}/$_maxSelection)',
-                            style: AppTypography.body(
-                              13,
-                              weight: FontWeight.w500,
-                            ).copyWith(
-                              color: context.colors.foregroundMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // 하단 앨범 선택 버튼
-          Positioned(
-            bottom: padding.bottom + 16,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: _albums.length > 1 ? _showAlbumPicker : null,
-                child: ClipRRect(
-                  borderRadius: AppRadii.xlBorder,
-                  child: BackdropFilter(
-                    filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                    child: Container(
+                // 선택된 사진 미리보기 — 드래그 종료 후 확정된 _selected 기준.
+                // 드래그 중엔 _selected를 안 건드려서 layout shift 안 일어남.
+                if (hasSelection)
+                  SizedBox(
+                    height: 88,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 10,
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                      decoration: BoxDecoration(
-                        color: context.colors.clickableArea
-                            .withValues(alpha: 0.82),
-                        borderRadius: AppRadii.xlBorder,
-                        border: Border.all(
-                          color: context.colors.foreground
-                              .withValues(alpha: 0.08),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _currentAlbum?.name ?? l10n.photoPickerAllPhotos,
-                            style: AppTypography.body(14,
-                                    weight: FontWeight.w500)
-                                .copyWith(
-                                    color: context.colors.foreground),
+                      itemCount: _selected.length,
+                      itemBuilder: (context, index) {
+                        final previewAsset = _selected[index];
+                        return _PreviewTile(
+                          asset: previewAsset,
+                          thumbFuture: _getThumb(previewAsset, 200),
+                          onRemove: () => _removeFromSelection(previewAsset),
+                        );
+                      },
+                    ),
+                  ),
+
+                if (hasSelection)
+                  Container(
+                    height: 0.5,
+                    color: context.colors.foreground.withValues(alpha: 0.06),
+                  ),
+
+                // 그리드 갤러리
+                Expanded(
+                  child: _loading
+                      ? Center(
+                          child: CircularProgressIndicator(
+                            color: context.colors.foreground,
+                            strokeWidth: 1.5,
                           ),
-                          if (_albums.length > 1) ...[
-                            const SizedBox(width: 6),
-                            FaIcon(
-                              FontAwesomeIcons.chevronDown,
-                              size: 10,
-                              color: context.colors.foregroundMuted,
+                        )
+                      : _assets.isEmpty
+                      ? Center(
+                          child: Text(
+                            l10n.photoPickerEmpty,
+                            style: AppTypography.body(
+                              14,
+                            ).copyWith(color: context.colors.foregroundMuted),
+                          ),
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            // 셀 크기를 LayoutBuilder가 알려주는 폭으로 산출.
+                            // 드래그 hit-test가 같은 값을 사용하도록 캐싱.
+                            final innerWidth =
+                                constraints.maxWidth - _kGridPadding * 2;
+                            final cellSide =
+                                (innerWidth -
+                                    _kGridSpacing * (_kGridCols - 1)) /
+                                _kGridCols;
+                            if (cellSide != _gridCellSide) {
+                              WidgetsBinding.instance.addPostFrameCallback((_) {
+                                if (mounted) {
+                                  setState(() => _gridCellSide = cellSide);
+                                }
+                              });
+                            }
+                            return RawGestureDetector(
+                              behavior: HitTestBehavior.deferToChild,
+                              // 마키는 long-press로만 시작 — 일반 vertical
+                              // swipe는 그리드 자체 스크롤로 가게 두고, 길게
+                              // 눌렀을 때만 selection drag 모드 진입.
+                              // GestureDetector는 long-press 시간을 못
+                              // 바꿔서 RawGestureDetector로 직접 구성.
+                              gestures: {
+                                LongPressGestureRecognizer:
+                                    GestureRecognizerFactoryWithHandlers<
+                                      LongPressGestureRecognizer
+                                    >(
+                                      () => LongPressGestureRecognizer(
+                                        duration: _kMarqueeLongPressDelay,
+                                      ),
+                                      (recognizer) {
+                                        recognizer.onLongPressStart =
+                                            _onMarqueeStart;
+                                        recognizer.onLongPressMoveUpdate =
+                                            _onMarqueeUpdate;
+                                        recognizer.onLongPressEnd = (_) =>
+                                            _onMarqueeEnd();
+                                        recognizer.onLongPressCancel =
+                                            _onMarqueeEnd;
+                                      },
+                                    ),
+                              },
+                              child: GridView.builder(
+                                key: _gridKey,
+                                controller: _gridController,
+                                padding: const EdgeInsets.all(_kGridPadding),
+                                // long-press 인식 전엔 일반 스와이프가 그리
+                                // 드 스크롤로 가야 하므로 기본 physics. 마
+                                // 키가 시작되면 long-press가 arena를 잡아
+                                // 스크롤은 자동으로 멈추고, 가장자리 auto-
+                                // scroll은 controller.jumpTo로 처리.
+                                physics: const BouncingScrollPhysics(),
+                                gridDelegate:
+                                    const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: _kGridCols,
+                                      mainAxisSpacing: _kGridSpacing,
+                                      crossAxisSpacing: _kGridSpacing,
+                                    ),
+                                itemCount: _assets.length,
+                                itemBuilder: (context, index) {
+                                  // 드래그 중엔 preview 기준으로 그리고,
+                                  // 평소엔 확정된 _selected 기준.
+                                  final display =
+                                      _dragPreviewSelected ?? _selected;
+                                  final asset = _assets[index];
+                                  final selIdx = display.indexOf(asset);
+                                  final isSelected = selIdx >= 0;
+                                  return _GalleryTile(
+                                    asset: asset,
+                                    selected: isSelected,
+                                    selectionOrder: isSelected ? selIdx + 1 : 0,
+                                    thumbFuture: _getThumb(asset, 300),
+                                    onSelect: () => _toggleSelect(asset),
+                                    onTap: () => _previewPhoto(asset),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+
+            // 사진 상세 프리뷰 — 전체 화면 검정 라이트박스. 사진이 화면 정중앙에
+            // 오고 상단까지 깔려, 그 위에 앱바 그라데이션이 자연스럽게 얹힌다.
+            // 앱바보다 Stack에서 먼저 그려져 앱바가 그대로 위에 유지된다.
+            if (_previewIndex != null)
+              Positioned.fill(
+                child: _PhotoPreviewScreen(
+                  assets: _assets,
+                  initialIndex: _previewIndex!,
+                  getSelected: () => _dragPreviewSelected ?? _selected,
+                  getMaxSelection: () => _maxSelection,
+                  onToggle: _toggleSelect,
+                  onClose: () => setState(() => _previewIndex = null),
+                ),
+              ),
+
+            // 앱바
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: DetailAppBar(
+                topInset: padding.top,
+                title: l10n.photoPickerScreenTitle,
+                titleOpacity: 1.0,
+                // 상세(프리뷰) 모드에선 사진 위에 위→아래 검정 그라데이션을
+                // 깔고 콘텐츠는 흰색. 그리드에선 배경 없음(테마색 그대로).
+                useGradient: _previewIndex != null,
+                gradientColor: _previewIndex != null ? Colors.black : null,
+                foregroundColor: _previewIndex != null ? Colors.white : null,
+                // 프리뷰 중이면 X는 그리드로 복귀(한 단계 back), 그리드에선 화면 종료.
+                onClose: _previewIndex != null
+                    ? () => setState(() => _previewIndex = null)
+                    : () => Navigator.of(context).pop(),
+                // Save 라벨 옆에 '(n/limit)' 카운터 — 한 번에 올릴 수 있는
+                // 한도(min(20, scene 잔여 슬롯))가 분모. 한 라인에 같이 붙여서
+                // 읽힘새가 'Save (3/20)' 형태가 되도록 RichText로 합침.
+                trailing: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: hasSelection ? _save : null,
+                  child: AnimatedOpacity(
+                    opacity: hasSelection ? 1.0 : 0.4,
+                    duration: const Duration(milliseconds: 200),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 12,
+                      ),
+                      child: RichText(
+                        text: TextSpan(
+                          style: AppTypography.body(15, weight: FontWeight.w600)
+                              .copyWith(
+                                color: _previewIndex != null
+                                    ? Colors.white
+                                    : context.colors.foreground,
+                              ),
+                          children: [
+                            TextSpan(text: l10n.actionSave),
+                            TextSpan(
+                              text:
+                                  ' (${(_dragPreviewSelected ?? _selected).length}/$_maxSelection)',
+                              style:
+                                  AppTypography.body(
+                                    13,
+                                    weight: FontWeight.w500,
+                                  ).copyWith(
+                                    color: _previewIndex != null
+                                        ? Colors.white.withValues(alpha: 0.6)
+                                        : context.colors.foregroundMuted,
+                                  ),
                             ),
                           ],
-                        ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
 
-        ],
+            // 하단 앨범 선택 버튼 — 프리뷰 중엔 숨김(프리뷰 자체 하단바와 충돌 방지).
+            if (_previewIndex == null)
+              Positioned(
+                bottom: padding.bottom + 16,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: GestureDetector(
+                    onTap: _albums.length > 1 ? _showAlbumPicker : null,
+                    child: ClipRRect(
+                      borderRadius: AppRadii.xlBorder,
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: context.colors.clickableArea.withValues(
+                              alpha: 0.82,
+                            ),
+                            borderRadius: AppRadii.xlBorder,
+                            border: Border.all(
+                              color: context.colors.foreground.withValues(
+                                alpha: 0.08,
+                              ),
+                              width: 0.5,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _currentAlbum?.name ??
+                                    l10n.photoPickerAllPhotos,
+                                style: AppTypography.body(
+                                  14,
+                                  weight: FontWeight.w500,
+                                ).copyWith(color: context.colors.foreground),
+                              ),
+                              if (_albums.length > 1) ...[
+                                const SizedBox(width: 6),
+                                FaIcon(
+                                  FontAwesomeIcons.chevronDown,
+                                  size: 10,
+                                  color: context.colors.foregroundMuted,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -900,10 +935,10 @@ class _GalleryTile extends StatelessWidget {
                         ? Center(
                             child: Text(
                               '$selectionOrder',
-                              style: AppTypography.body(11,
-                                      weight: FontWeight.w700)
-                                  .copyWith(
-                                      color: context.colors.background),
+                              style: AppTypography.body(
+                                11,
+                                weight: FontWeight.w700,
+                              ).copyWith(color: context.colors.background),
                             ),
                           )
                         : null,
@@ -952,11 +987,9 @@ class _PreviewTile extends StatelessWidget {
                     future: thumbFuture,
                     builder: (context, snapshot) {
                       if (snapshot.data != null) {
-                        return Image.memory(snapshot.data!,
-                            fit: BoxFit.cover);
+                        return Image.memory(snapshot.data!, fit: BoxFit.cover);
                       }
-                      return ColoredBox(
-                          color: context.colors.nonClickableArea);
+                      return ColoredBox(color: context.colors.nonClickableArea);
                     },
                   ),
                 ),
@@ -1006,6 +1039,7 @@ class _PhotoPreviewScreen extends StatefulWidget {
     required this.getSelected,
     required this.getMaxSelection,
     required this.onToggle,
+    required this.onClose,
   });
 
   final List<AssetEntity> assets;
@@ -1014,29 +1048,8 @@ class _PhotoPreviewScreen extends StatefulWidget {
   final int Function() getMaxSelection;
   final void Function(AssetEntity) onToggle;
 
-  static Route<void> route({
-    required List<AssetEntity> assets,
-    required int initialIndex,
-    required List<AssetEntity> Function() getSelected,
-    required int Function() getMaxSelection,
-    required void Function(AssetEntity) onToggle,
-  }) {
-    return PageRouteBuilder<void>(
-      opaque: true,
-      transitionDuration: const Duration(milliseconds: 220),
-      reverseTransitionDuration: const Duration(milliseconds: 180),
-      pageBuilder: (_, _, _) => _PhotoPreviewScreen(
-        assets: assets,
-        initialIndex: initialIndex,
-        getSelected: getSelected,
-        getMaxSelection: getMaxSelection,
-        onToggle: onToggle,
-      ),
-      transitionsBuilder: (_, anim, _, child) {
-        return FadeTransition(opacity: anim, child: child);
-      },
-    );
-  }
+  /// 프리뷰를 닫고 그리드로 돌아간다(같은 화면 오버레이라 라우트 pop 아님).
+  final VoidCallback onClose;
 
   @override
   State<_PhotoPreviewScreen> createState() => _PhotoPreviewScreenState();
@@ -1050,14 +1063,14 @@ class _PhotoPreviewScreenState extends State<_PhotoPreviewScreen> {
   // 떨어져 이미지가 깜빡임. 캐싱으로 방지.
   // 풀해상도 프리뷰 Future 캐시 — 스와이프하며 본 에셋이 무한 누적되지
   // 않도록 LRU 상한. PageView는 현재 ±몇 페이지만 살아있어 16이면 충분.
-  final LruCache<String, Future<Uint8List?>> _futureCache =
-      LruCache(maxSize: 16);
+  final LruCache<String, Future<Uint8List?>> _futureCache = LruCache(
+    maxSize: 16,
+  );
 
   Future<Uint8List?> _futureFor(AssetEntity asset) {
     final cached = _futureCache.get(asset.id);
     if (cached != null) return cached;
-    final future =
-        asset.thumbnailDataWithSize(const ThumbnailSize(1600, 1600));
+    final future = asset.thumbnailDataWithSize(const ThumbnailSize(1600, 1600));
     _futureCache.put(asset.id, future);
     return future;
   }
@@ -1091,9 +1104,11 @@ class _PhotoPreviewScreenState extends State<_PhotoPreviewScreen> {
     final currentAsset = widget.assets[_currentIndex];
     final isSelected = selected.contains(currentAsset);
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
+    // 별도 Scaffold 없이 부모(picker) Scaffold 안의 오버레이로 그린다. 앱바
+    // 아래 영역만 채우는 검정 라이트박스.
+    return ColoredBox(
+      color: Colors.black,
+      child: Stack(
         children: [
           PageView.builder(
             controller: _controller,
@@ -1137,12 +1152,9 @@ class _PhotoPreviewScreenState extends State<_PhotoPreviewScreen> {
                 children: [
                   // 좌: 원형 grid (close → 그리드로 복귀)
                   _PreviewBlurPill(
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: widget.onClose,
                     isCircle: true,
-                    child: const _GridDotsIcon(
-                      size: 16,
-                      color: Colors.white,
-                    ),
+                    child: const _GridDotsIcon(size: 16, color: Colors.white),
                   ),
                   const SizedBox(width: 12),
                   // 가운데: 카운터 pill (앱바 Save 포맷과 동일 = n/limit)
@@ -1150,9 +1162,10 @@ class _PhotoPreviewScreenState extends State<_PhotoPreviewScreen> {
                     child: _PreviewBlurPill(
                       child: Text(
                         '${selected.length}/$maxSelection',
-                        style:
-                            AppTypography.body(14, weight: FontWeight.w500)
-                                .copyWith(color: Colors.white),
+                        style: AppTypography.body(
+                          14,
+                          weight: FontWeight.w500,
+                        ).copyWith(color: Colors.white),
                       ),
                     ),
                   ),
@@ -1260,10 +1273,7 @@ class _GridDotsPainter extends CustomPainter {
         final left = c * (cell + gap);
         final top = r * (cell + gap);
         canvas.drawRRect(
-          RRect.fromRectAndRadius(
-            Rect.fromLTWH(left, top, cell, cell),
-            radius,
-          ),
+          RRect.fromRectAndRadius(Rect.fromLTWH(left, top, cell, cell), radius),
           paint,
         );
       }
@@ -1316,16 +1326,18 @@ class _AlbumList extends StatelessWidget {
               onTap: () => onSelect(album),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 14),
+                  horizontal: 24,
+                  vertical: 14,
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       child: Text(
                         album.name,
-                        style:
-                            AppTypography.body(15, weight: FontWeight.w500)
-                                .copyWith(
-                                    color: context.colors.foreground),
+                        style: AppTypography.body(
+                          15,
+                          weight: FontWeight.w500,
+                        ).copyWith(color: context.colors.foreground),
                       ),
                     ),
                     if (isCurrent)

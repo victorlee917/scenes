@@ -10,7 +10,12 @@ import 'data/share_repository.dart';
 class ShareSlugViewModel extends AsyncNotifier<String?> {
   @override
   Future<String?> build() async {
-    final pairId = ref.watch(myActivePairIdProvider);
+    // active 커플(=pair)이 확정될 때까지 대기한다. 로딩 중 myActivePairId가
+    // 잠깐 null이 되는 사이 섣불리 AsyncData(null)로 떨어지면 "ID 미등록"으로
+    // 깜빡인다(등록했는데 미등록처럼 보임). activeCoupleProvider.future로 첫
+    // 값이 emit될 때까지 이 provider를 로딩 상태로 유지.
+    final couple = await ref.watch(activeCoupleProvider.future);
+    final pairId = couple?.couple.pairId;
     if (pairId == null) return null;
     return ref.read(shareRepositoryProvider).getSlug(pairId);
   }

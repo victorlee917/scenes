@@ -24,6 +24,8 @@ class DetailAppBar extends StatelessWidget {
     this.leading,
     this.borderOpacity = 1.0,
     this.useGradient = true,
+    this.gradientColor,
+    this.foregroundColor,
   });
 
   /// 기기 safe area top inset. Padding으로 반영.
@@ -53,84 +55,97 @@ class DetailAppBar extends StatelessWidget {
   /// false이면 그라데이션 없이 bar만 반환.
   final bool useGradient;
 
+  /// 그라데이션 기준색 오버라이드. null이면 테마 [gradientBase]. 예: 사진
+  /// 라이트박스 위에 얹을 땐 `Colors.black`으로 검정 그라데이션.
+  final Color? gradientColor;
+
+  /// 타이틀·기본 leading/trailing 아이콘 색 오버라이드. null이면 테마
+  /// foreground. 어두운 배경(검정 그라데이션) 위에선 `Colors.white`.
+  final Color? foregroundColor;
+
   static const double barHeight = 48;
   static const double _buttonSize = 36;
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final fg = foregroundColor ?? context.colors.foreground;
     Widget bar = Padding(
       padding: EdgeInsets.only(top: topInset),
       child: SizedBox(
         height: barHeight,
-          child: Stack(
-            children: [
-              // 타이틀 — 가운데 정렬, 스크롤 임계점을 지나면 fade-in.
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 56),
-                    child: Center(
-                      child: Opacity(
-                        opacity: titleOpacity,
-                        child: Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.center,
-                          style: AppTypography.body(
-                            15,
-                            weight: FontWeight.w500,
-                          ).copyWith(color: context.colors.foreground),
-                        ),
+        child: Stack(
+          children: [
+            // 타이틀 — 가운데 정렬, 스크롤 임계점을 지나면 fade-in.
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 56),
+                  child: Center(
+                    child: Opacity(
+                      opacity: titleOpacity,
+                      child: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: AppTypography.body(
+                          15,
+                          weight: FontWeight.w500,
+                        ).copyWith(color: fg),
                       ),
                     ),
                   ),
                 ),
               ),
-              // Leading
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 16),
-                  child: leading ??
-                      _BarButton(
-                        size: _buttonSize,
-                        semanticLabel: l10n.detailBack,
-                        onTap: onClose,
-                        child: FaIcon(FontAwesomeIcons.xmark,
-                            size: 18,
-                            color: context.colors.foreground
-                                .withValues(alpha: 0.9)),
+            ),
+            // Leading
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child:
+                    leading ??
+                    _BarButton(
+                      size: _buttonSize,
+                      semanticLabel: l10n.detailBack,
+                      onTap: onClose,
+                      child: FaIcon(
+                        FontAwesomeIcons.xmark,
+                        size: 18,
+                        color: fg.withValues(alpha: 0.9),
                       ),
-                ),
-              ),
-              // Trailing
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 16),
-                  child: trailing ??
-                      _BarButton(
-                        size: _buttonSize,
-                        semanticLabel: l10n.detailMoreActions,
-                        onTap: onMoreActions ?? () {},
-                        child: FaIcon(FontAwesomeIcons.ellipsis,
-                            size: 18,
-                            color: context.colors.foreground
-                                .withValues(alpha: 0.9)),
-                      ),
-                ),
-              ),
-                ],
+                    ),
               ),
             ),
-          );
+            // Trailing
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child:
+                    trailing ??
+                    _BarButton(
+                      size: _buttonSize,
+                      semanticLabel: l10n.detailMoreActions,
+                      onTap: onMoreActions ?? () {},
+                      child: FaIcon(
+                        FontAwesomeIcons.ellipsis,
+                        size: 18,
+                        color: fg.withValues(alpha: 0.9),
+                      ),
+                    ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 
     if (!useGradient) return bar;
 
     final gradientHeight = topInset + barHeight + 40;
-    final base = context.colors.gradientBase;
+    final base = gradientColor ?? context.colors.gradientBase;
     return SizedBox(
       height: gradientHeight,
       child: DecoratedBox(
@@ -148,10 +163,7 @@ class DetailAppBar extends StatelessWidget {
             stops: const [0.0, 0.35, 0.6, 0.82, 1.0],
           ),
         ),
-        child: Align(
-          alignment: Alignment.topLeft,
-          child: bar,
-        ),
+        child: Align(alignment: Alignment.topLeft, child: bar),
       ),
     );
   }
@@ -187,4 +199,3 @@ class _BarButton extends StatelessWidget {
     );
   }
 }
-

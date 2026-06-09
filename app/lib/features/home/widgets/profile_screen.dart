@@ -499,8 +499,12 @@ class _ShareCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
-    final slug = ref.watch(shareSlugProvider).valueOrNull;
+    final slugAsync = ref.watch(shareSlugProvider);
+    final slug = slugAsync.valueOrNull;
     final hasSlug = slug != null && slug.isNotEmpty;
+    // 아직 커플/slug를 불러오는 중인지. 로딩과 "불러왔는데 미설정"을 구분해야
+    // 로딩 중 "ID 설정 필요"가 잘못 뜨는 깜빡임을 막는다.
+    final resolving = slugAsync.isLoading && !slugAsync.hasValue;
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -537,6 +541,9 @@ class _ShareCard extends ConsumerWidget {
             SizedBox(height: hasSlug ? 18 : 12),
             if (hasSlug)
               _ShareUrlRow(slug: slug)
+            else if (resolving)
+              // 로딩 중엔 prompt를 띄우지 않고 한 줄 높이만 확보(레이아웃 안정).
+              const SizedBox(height: 18)
             else
               Text(
                 l10n.shareCardSetPrompt,

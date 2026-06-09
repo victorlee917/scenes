@@ -91,19 +91,27 @@ class SignedUrlCache {
             now.millisecondsSinceEpoch) {
       return entry.url;
     }
-    try {
-      final url = await _client.storage
-          .from(_bucket)
-          .createSignedUrl(path, ttl.inSeconds);
-      _mem![path] = _Entry(
-        url: url,
-        expiresAtMs: now.add(ttl).millisecondsSinceEpoch,
-      );
-      _schedulePersist();
-      return url;
-    } catch (_) {
-      return null;
+    // 한 scene을 열면 수백 장의 createSignedUrl이 동시에 나가, 일부가 일시적
+    // 네트워크 오류/혼잡으로 실패하면 그 콘텐츠가 URL=null이 되어 그리드에서
+    // 영구 누락된다(다시 들어가야 보임). 짧은 백오프로 몇 번 재시도해 완화.
+    for (var attempt = 0; attempt < 3; attempt++) {
+      try {
+        final url = await _client.storage
+            .from(_bucket)
+            .createSignedUrl(path, ttl.inSeconds);
+        _mem![path] = _Entry(
+          url: url,
+          expiresAtMs: now.add(ttl).millisecondsSinceEpoch,
+        );
+        _schedulePersist();
+        return url;
+      } catch (_) {
+        if (attempt < 2) {
+          await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
+        }
+      }
     }
+    return null;
   }
 
   /// 명시적으로 path 항목 제거 — 콘텐츠/scene 삭제 직후 stale URL 정리에 사용.

@@ -77,7 +77,10 @@ class _ShareSettingsScreenState extends ConsumerState<ShareSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
-    final slug = ref.watch(shareSlugProvider).valueOrNull;
+    final slugAsync = ref.watch(shareSlugProvider);
+    final slug = slugAsync.valueOrNull;
+    // 커플/slug 로딩 중인지 — "ID 설정 필요"가 잘못 뜨는 깜빡임 방지용.
+    final resolving = slugAsync.isLoading && !slugAsync.hasValue;
     // 최신 Scene이 위로 오도록 역순.
     final scenes =
         ref.watch(homeViewModelProvider.select((s) => s.scenes)).reversed.toList();
@@ -102,6 +105,7 @@ class _ShareSettingsScreenState extends ConsumerState<ShareSettingsScreen> {
                       // 공유 주소 카드 (라벨 + 복사 + id 변경)
                       _AddressCard(
                         slug: slug,
+                        resolving: resolving,
                         onCopy: slug != null ? () => _copy(slug) : () {},
                         onOpen: slug != null ? () => _open(slug) : () {},
                         onSet: () => _openSheet(),
@@ -224,6 +228,7 @@ class _AddressChip extends StatelessWidget {
 class _AddressCard extends StatelessWidget {
   const _AddressCard({
     required this.slug,
+    required this.resolving,
     required this.onCopy,
     required this.onOpen,
     required this.onSet,
@@ -232,6 +237,9 @@ class _AddressCard extends StatelessWidget {
 
   /// 현재 닉네임(id). null이면 미설정.
   final String? slug;
+
+  /// 커플/slug를 아직 불러오는 중. true면 "ID 설정 필요" 대신 로딩 표시.
+  final bool resolving;
   final VoidCallback onCopy;
   final VoidCallback onOpen;
   final VoidCallback onSet;
@@ -294,6 +302,23 @@ class _AddressCard extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            )
+          else if (resolving)
+            // 로딩 중 — "ID 설정 필요" 대신 작은 스피너만(잘못된 미설정 표시 방지).
+            _AddressChip(
+              child: SizedBox(
+                height: 20,
+                child: Center(
+                  child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: context.colors.foregroundMuted,
+                    ),
+                  ),
+                ),
               ),
             )
           else
