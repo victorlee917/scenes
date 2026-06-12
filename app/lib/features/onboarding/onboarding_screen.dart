@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -321,12 +322,16 @@ class _LoginSheet extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Column(
             children: [
-              _LoginButton(
-                icon: FontAwesomeIcons.apple,
-                label: l10n.onboardingContinueWithApple,
-                onTap: onApple,
-              ),
-              const SizedBox(height: 10),
+              // Apple 로그인은 iOS 전용. Android는 web flow 미설정이라 버튼을
+              // 숨긴다(누르면 실패). Android 유저는 Google/Kakao 사용.
+              if (Platform.isIOS) ...[
+                _LoginButton(
+                  icon: FontAwesomeIcons.apple,
+                  label: l10n.onboardingContinueWithApple,
+                  onTap: onApple,
+                ),
+                const SizedBox(height: 10),
+              ],
               _LoginButton(
                 icon: FontAwesomeIcons.google,
                 label: l10n.onboardingContinueWithGoogle,

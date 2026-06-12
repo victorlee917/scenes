@@ -2,7 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:app_settings/app_settings.dart';
 
 import '../../core/theme/app_colors_ext.dart';
 import '../../core/theme/app_radii.dart';
@@ -76,11 +76,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen>
   }
 
   Future<void> _openSystemSettings() async {
-    // iOS: app-settings: scheme. Android: app-specific notification settings.
-    // url_launcher가 두 플랫폼 모두 처리.
-    final uri = Uri.parse('app-settings:');
+    // iOS/Android 모두 앱의 알림 설정 화면을 연다. (이전엔 iOS 전용 스킴인
+    // `app-settings:`를 launchUrl로 열어 Android에선 무반응이었음.)
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      await AppSettings.openAppSettings(type: AppSettingsType.notification);
     } catch (_) {
       // 실패해도 사용자가 수동으로 열 수 있음 — 별도 처리 X.
     }

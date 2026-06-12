@@ -28,9 +28,10 @@ class NotificationPreferencesRepository {
 
   /// row가 없으면 default 값으로 insert. 이미 있으면 noop.
   ///
-  /// [allOn]이 true면 모든 카테고리(partner/anniversary/marketing)를 true로
-  /// 만들어 "처음 푸시 동의 시 전부 on" 정책을 구현. 백엔드 컬럼 default는
-  /// marketing=false라 명시적으로 override 필요.
+  /// [allOn]이 true면 **기능성** 알림(partner/anniversary)을 on으로 초기화 —
+  /// "처음 푸시 동의 시 기능성 알림 on" 정책. **마케팅(앱 소식)은 옵트인이라
+  /// [allOn]과 무관하게 항상 off**로 둔다(GDPR·스토어 정책상 마케팅은 사용자가
+  /// 직접 켜야 함). DB 컬럼 default(marketing=false) 및 가입 트리거와도 일치.
   Future<NotificationPreferences> initializeIfMissing({bool allOn = true}) async {
     final myId = _myId;
     if (myId == null) {
@@ -44,7 +45,8 @@ class NotificationPreferencesRepository {
           'user_id': myId,
           'partner_activity_enabled': allOn,
           'anniversary_reminders_enabled': allOn,
-          'marketing_enabled': allOn,
+          // 마케팅은 옵트인 — 자동 on 안 함.
+          'marketing_enabled': false,
         })
         .select()
         .single();

@@ -1,4 +1,4 @@
-package com.scenes.scenes
+package com.tapas.scenes
 
 import io.flutter.embedding.android.FlutterActivity
 
