@@ -48,22 +48,31 @@ class PurchasesRepository {
   static bool _configured = false;
   bool get isConfigured => _configured;
 
-  /// SDK 초기화. iOS만 등록(현재 출시 타깃). Android 출시 시 goog_ 키로 분기.
-  /// 키가 비어 있으면 조용히 스킵 — 개발 환경에서 RC 키 없이도 앱이 떠야 함.
+  /// iOS RevenueCat 공개 SDK 키(appl_). Android 키(goog_)와 함께 앱 임베드가
+  /// 설계상 정상인 공개값 — entitlement 부여 불가, 결제는 스토어 영수증 검증을
+  /// 거친다. Sentry DSN과 동일 컨벤션으로 하드코딩해 dart-define 누락으로 결제가
+  /// 조용히 꺼지는 사고(평범한 빌드에 키가 빠지는 함정)를 방지.
+  static const _iosKey = 'appl_WmEjIANyKfMSyijtOEAmSFmXeSV';
+
+  /// Android RevenueCat 공개 SDK 키(goog_). Play Store 앱(com.tapas.scenesapp).
+  static const _androidKey = 'goog_PzgxxqhhdHcvRdZARHCtrpnXHuQ';
+
+  /// SDK 초기화. iOS/Android는 각 플랫폼 키로, 그 외 플랫폼은 조용히 스킵 —
+  /// 개발/웹 환경에서 RC 없이도 앱이 떠야 함.
   Future<void> configure() async {
     if (_configured) {
       _log('configure: already configured, skipping');
       return;
     }
-    if (!Platform.isIOS) {
-      _log('configure: skipped (platform != iOS)');
+    final String key;
+    if (Platform.isIOS) {
+      key = _iosKey;
+    } else if (Platform.isAndroid) {
+      key = _androidKey;
+    } else {
+      _log('configure: skipped (unsupported platform)');
       return;
     }
-    // RevenueCat 공개 SDK 키(appl_)는 앱 임베드가 설계상 정상인 공개값이라
-    // (entitlement 부여 불가, 결제는 Apple 영수증 검증을 거침) 하드코딩한다.
-    // Sentry DSN과 동일 컨벤션 — dart-define 누락으로 결제가 조용히 꺼지는
-    // 사고(평범한 `flutter build ipa`에 키가 빠지는 함정)를 방지.
-    const key = 'appl_WmEjIANyKfMSyijtOEAmSFmXeSV';
     if (key.isEmpty) {
       _log('configure: SKIPPED — RevenueCat key empty.');
       return;
@@ -218,7 +227,10 @@ class PurchasesRepository {
       'price=${package.storeProduct.priceString}',
     );
     try {
-      final info = await Purchases.purchasePackage(package);
+      // SDK v10부터 결과가 CustomerInfo가 아니라 PurchaseResult(=CustomerInfo +
+      // StoreTransaction). 상위 레이어는 entitlement만 보므로 여기서 벗겨낸다.
+      final result = await Purchases.purchase(PurchaseParams.package(package));
+      final info = result.customerInfo;
       _log(
         'purchasePackage: OK entitlements='
         '${info.entitlements.active.keys.toList()}',
