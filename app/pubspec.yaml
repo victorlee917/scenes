@@ -99,6 +99,14 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/logo/logo_dark.png"
   remove_alpha_ios: true
+  # Android 8+ 적응형 아이콘. 이게 없으면 런처가 레거시 정사각 아이콘을 원형
+  # 마스크 안에 축소해 "원 안 작은 사각형"으로 보인다. flutter_launcher_icons가
+  # foreground에 16% inset을 자동 적용하므로, foreground는 마크가 프레임의
+  # 대부분을 차지하는 full-bleed 원본(logo_dark, 마크 ~66%)을 그대로 쓴다
+  # (inset 후 ~45%로 안전영역에 적절히 안착). background는 브랜드 다크색과
+  # 동일해 마스크 모양과 무관하게 마크만 중앙에 뜬다.
+  adaptive_icon_background: "#151517"
+  adaptive_icon_foreground: "assets/logo/logo_dark.png"
 
 # 스플래시 화면 생성 설정. 변경 시 `dart run flutter_native_splash:create`로
 # 재생성. 앱이 dark-first(themeMode 기본값 ThemeMode.dark)고 iOS launch

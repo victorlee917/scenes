@@ -333,8 +333,21 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
     final base = List<AssetEntity>.of(_dragOriginalSelected);
     bool capHit = false;
     if (_dragTargetSelect) {
+      // 순번은 드래그 방향을 따라 매긴다 — origin(시작 셀)에서 가까운 것부터.
+      // 인덱스 오름차순으로만 넣으면 아래→위로 드래그해도 항상 위쪽이 먼저
+      // 번호를 받는다. origin보다 현재 셀 인덱스가 작으면(위/앞으로 드래그)
+      // 내림차순으로 추가해 아래에서 선택한 순서대로 순번이 잡히게 한다.
+      final curIdx = _indexAt(cur);
+      final originIdx = _dragOriginCellIdx;
+      final bool ascending;
+      if (originIdx != null && curIdx != null && curIdx != originIdx) {
+        ascending = curIdx >= originIdx;
+      } else {
+        ascending = cur.dy >= origin.dy;
+      }
       final sortedInside = inside.toList()..sort();
-      for (final idx in sortedInside) {
+      final ordered = ascending ? sortedInside : sortedInside.reversed.toList();
+      for (final idx in ordered) {
         final asset = _assets[idx];
         if (base.contains(asset)) continue;
         if (base.length >= _maxSelection) {
@@ -444,8 +457,23 @@ class _PhotoPickerScreenState extends ConsumerState<PhotoPickerScreen> {
   }
 
   Future<void> _loadPhotos() async {
-    final permission = await PhotoManager.requestPermissionExtend();
-    if (!permission.isAuth) {
+    // ⚠️ 반드시 이미지 전용(RequestType.image)으로 권한 요청. 기본값
+    // RequestType.common(이미지+비디오)로 요청하면 photo_manager가 Android 13+
+    // 에서 READ_MEDIA_IMAGES **AND READ_MEDIA_VIDEO** 둘 다 granted인지 검사하는데
+    // (PermissionDelegate33.havePermissions), 우리는 READ_MEDIA_VIDEO를 선언하지
+    // 않아 항상 Denied가 떠 사진 그리드가 통째로 비었다.
+    final permission = await PhotoManager.requestPermissionExtend(
+      requestOption: const PermissionRequestOption(
+        androidPermission: AndroidPermission(
+          type: RequestType.image,
+          mediaLocation: false,
+        ),
+      ),
+    );
+    // hasAccess = authorized || limited. isAuth는 authorized만 true라, Android
+    // 14+(targetSdk 34+)에서 "일부 사진만 허용"(limited)을 고르면 사진이 있어도
+    // 빈 그리드가 됐다. limited면 선택한 사진만이라도 로드한다.
+    if (!permission.hasAccess) {
       if (mounted) setState(() => _loading = false);
       return;
     }
