@@ -30,9 +30,12 @@ class FloatingBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final padding = MediaQuery.paddingOf(context);
     final viewInsets = MediaQuery.viewInsetsOf(context);
+    // 플로팅 카드라 항상 좌우(12)와 대칭되는 기본 하단 여백을 준다. 안전영역
+    // inset만 쓰면 Android(3버튼 내비 등 padding.bottom==0)에서 소프트바에
+    // 바로 붙는다 — iOS는 홈 인디케이터(~34) 덕에 가려졌던 문제.
     final bottomPadding = viewInsets.bottom > 0
         ? viewInsets.bottom + 8
-        : padding.bottom;
+        : padding.bottom + 12;
     return Padding(
       padding: EdgeInsets.only(
         left: 12,

@@ -91,6 +91,11 @@ Future<void> _bootstrap() async {
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
+  // Android도 iOS처럼 상태바/내비바 뒤로 콘텐츠가 깔리는 edge-to-edge. 이게
+  // 없으면 안드로이드가 상태바를 불투명 기본색으로 직접 그려 상단 그라데이션이
+  // 상태바 밑에서 끊긴다(iOS는 항상 edge-to-edge라 문제 없었음). 실제 상태바/
+  // 내비바 투명 처리는 ScenesApp builder의 AnnotatedRegion에서 테마에 맞춰 적용.
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   await initializeDateFormatting();
   KakaoSdk.init(
     nativeAppKey: kakaoNativeAppKey,
@@ -385,7 +390,23 @@ class _ScenesAppState extends ConsumerState<ScenesApp>
       routerConfig: router,
       // 라우터 child를 LockOverlay로 감싸 isLocked=true일 때 challenge 노출.
       builder: (context, child) {
-        return LockOverlay(child: child ?? const SizedBox.shrink());
+        // 상태바/내비바를 투명으로 만들어 상단 그라데이션이 그 뒤까지 이어지게
+        // 한다(edge-to-edge). AppBar 없는 화면(홈 등)까지 커버하려고 여기 root에
+        // 건다. 아이콘 밝기는 현재 테마 밝기에 맞춰 반전.
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness:
+                isDark ? Brightness.light : Brightness.dark,
+            systemNavigationBarContrastEnforced: false,
+          ),
+          child: LockOverlay(child: child ?? const SizedBox.shrink()),
+        );
       },
     );
   }

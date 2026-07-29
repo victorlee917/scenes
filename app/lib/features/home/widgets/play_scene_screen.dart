@@ -1336,10 +1336,10 @@ class _PlaySceneScreenState extends ConsumerState<PlaySceneScreen>
   }
 
   void _restoreSystemUI() {
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.manual,
-      overlays: SystemUiOverlay.values,
-    );
+    // 앱 기본 모드는 main.dart의 edgeToEdge(투명 바 + 컨텐츠가 뒤로 그려짐).
+    // manual로 복구하면 Android 네비바가 불투명해져 배경이 흰색으로 떠버린다.
+    // 반드시 앱 기본값(edgeToEdge)으로 되돌려 투명 바를 유지.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   }
 
   @override
