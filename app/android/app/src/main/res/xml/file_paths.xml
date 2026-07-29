@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider가 노출할 수 있는 경로. 공유 영상은 앱 임시 디렉토리
+     (getTemporaryDirectory → cache-path 또는 external cache)에 떨어진다. -->
+<paths>
+    <cache-path name="cache" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <files-path name="files" path="." />
+    <external-files-path name="external_files" path="." />
+    <external-path name="external" path="." />
+</paths>

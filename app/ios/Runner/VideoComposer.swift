@@ -21,6 +21,16 @@ final class VideoComposer {
 
   private let channel: FlutterMethodChannel
 
+  // MARK: - 스트리밍 세션 상태 (begin/append/end)
+  // Flutter가 raw RGBA frame을 한 장씩 밀어넣어 PNG로 굽지 않고 바로 인코딩.
+  // Android VideoComposerPlugin의 스트리밍 경로와 동일 계약.
+  private var sessionWriter: AVAssetWriter?
+  private var sessionInput: AVAssetWriterInput?
+  private var sessionAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+  private var sessionFrameTime: CMTime = .zero
+  private var sessionFrameIndex: Int = 0
+  private let sessionQueue = DispatchQueue(label: "scenes.video_composer.session", qos: .userInitiated)
+
   init(messenger: FlutterBinaryMessenger) {
     self.channel = FlutterMethodChannel(name: VideoComposer.channelName, binaryMessenger: messenger)
     self.channel.setMethodCallHandler { [weak self] call, result in
@@ -50,6 +60,25 @@ final class VideoComposer {
         outputPath: outputPath,
         result: result
       )
+    case "beginCompose":
+      guard let args = call.arguments as? [String: Any],
+            let frameDuration = args["frameDuration"] as? Double,
+            let outputPath = args["outputPath"] as? String else {
+        result(FlutterError(code: "args", message: "Invalid arguments", details: nil))
+        return
+      }
+      beginCompose(frameDuration: frameDuration, outputPath: outputPath, result: result)
+    case "appendRawFrame":
+      guard let args = call.arguments as? [String: Any],
+            let bytes = args["bytes"] as? FlutterStandardTypedData,
+            let width = args["width"] as? Int,
+            let height = args["height"] as? Int else {
+        result(FlutterError(code: "args", message: "Invalid arguments", details: nil))
+        return
+      }
+      appendRawFrame(data: bytes.data, width: width, height: height, result: result)
+    case "endCompose":
+      endCompose(result: result)
     case "shareToInstagramStory":
       guard let args = call.arguments as? [String: Any],
             let videoPath = args["videoPath"] as? String else {
@@ -212,11 +241,181 @@ final class VideoComposer {
     }
   }
 
+  // MARK: - 스트리밍 인코딩 (begin/append/end)
+
+  private static let streamSize = CGSize(width: 1080, height: 1920)
+
+  /// 스트리밍 세션 시작 — writer/input/adaptor를 세워 startSession까지.
+  private func beginCompose(frameDuration: Double, outputPath: String, result: @escaping FlutterResult) {
+    sessionQueue.async {
+      if self.sessionWriter != nil {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "state", message: "Session already active", details: nil))
+        }
+        return
+      }
+      do {
+        let outputURL = URL(fileURLWithPath: outputPath)
+        try? FileManager.default.removeItem(at: outputURL)
+        let videoSize = VideoComposer.streamSize
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
+        let sourceFps = max(1.0, 1.0 / frameDuration)
+        let expectedFps = Int(sourceFps.rounded())
+        // compose()와 동일한 인코더 설정(HEVC, 12Mbps, 1s GOP).
+        let videoSettings: [String: Any] = [
+          AVVideoCodecKey: AVVideoCodecType.hevc,
+          AVVideoWidthKey: Int(videoSize.width),
+          AVVideoHeightKey: Int(videoSize.height),
+          AVVideoCompressionPropertiesKey: [
+            AVVideoAverageBitRateKey: 12_000_000,
+            AVVideoAllowFrameReorderingKey: false,
+            AVVideoMaxKeyFrameIntervalDurationKey: 1.0,
+            AVVideoExpectedSourceFrameRateKey: expectedFps,
+            AVVideoAverageNonDroppableFrameRateKey: expectedFps,
+          ],
+        ]
+        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        input.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+          assetWriterInput: input,
+          sourcePixelBufferAttributes: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey as String: Int(videoSize.width),
+            kCVPixelBufferHeightKey as String: Int(videoSize.height),
+          ]
+        )
+        guard writer.canAdd(input) else {
+          throw NSError(domain: "VideoComposer", code: 1,
+                        userInfo: [NSLocalizedDescriptionKey: "Cannot add writer input"])
+        }
+        writer.add(input)
+        guard writer.startWriting() else {
+          throw writer.error ?? NSError(domain: "VideoComposer", code: 2,
+                                        userInfo: [NSLocalizedDescriptionKey: "startWriting failed"])
+        }
+        writer.startSession(atSourceTime: .zero)
+        self.sessionWriter = writer
+        self.sessionInput = input
+        self.sessionAdaptor = adaptor
+        self.sessionFrameTime = CMTime(seconds: frameDuration, preferredTimescale: 600)
+        self.sessionFrameIndex = 0
+        DispatchQueue.main.async { result(nil) }
+      } catch {
+        self.sessionWriter = nil
+        self.sessionInput = nil
+        self.sessionAdaptor = nil
+        DispatchQueue.main.async {
+          result(FlutterError(code: "beginCompose", message: error.localizedDescription, details: nil))
+        }
+      }
+    }
+  }
+
+  /// raw RGBA(straight, top-left origin) frame 한 장을 인코더에 append.
+  /// Dart가 결과를 await하므로 프레임당 backpressure가 걸린다.
+  private func appendRawFrame(data: Data, width: Int, height: Int, result: @escaping FlutterResult) {
+    sessionQueue.async {
+      guard let input = self.sessionInput,
+            let adaptor = self.sessionAdaptor,
+            let writer = self.sessionWriter else {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "state", message: "No active session", details: nil))
+        }
+        return
+      }
+      guard let buffer = self.makePixelBuffer(
+        fromRawRGBA: data, width: width, height: height, size: VideoComposer.streamSize
+      ) else {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "pixelbuffer", message: "Failed to build pixel buffer", details: nil))
+        }
+        return
+      }
+      // requestMediaDataWhenReady 콜백 밖에서 append하므로 준비될 때까지 대기.
+      while !input.isReadyForMoreMediaData {
+        if writer.status == .failed { break }
+        Thread.sleep(forTimeInterval: 0.002)
+      }
+      let pts = CMTimeMultiply(self.sessionFrameTime, multiplier: Int32(self.sessionFrameIndex))
+      if !adaptor.append(buffer, withPresentationTime: pts) {
+        let err = writer.error ?? NSError(domain: "VideoComposer", code: 3,
+                                          userInfo: [NSLocalizedDescriptionKey: "append failed"])
+        DispatchQueue.main.async {
+          result(FlutterError(code: "appendRawFrame", message: err.localizedDescription, details: nil))
+        }
+        return
+      }
+      self.sessionFrameIndex += 1
+      DispatchQueue.main.async { result(nil) }
+    }
+  }
+
+  /// 스트리밍 종료 — markAsFinished + finishWriting 후 완성 path 반환.
+  private func endCompose(result: @escaping FlutterResult) {
+    sessionQueue.async {
+      guard let input = self.sessionInput, let writer = self.sessionWriter else {
+        DispatchQueue.main.async {
+          result(FlutterError(code: "state", message: "No active session", details: nil))
+        }
+        return
+      }
+      input.markAsFinished()
+      writer.finishWriting {
+        let status = writer.status
+        let path = writer.outputURL.path
+        let err = writer.error
+        self.sessionWriter = nil
+        self.sessionInput = nil
+        self.sessionAdaptor = nil
+        DispatchQueue.main.async {
+          if status == .completed {
+            result(path)
+          } else {
+            result(FlutterError(code: "endCompose",
+                                message: err?.localizedDescription ?? "finish failed",
+                                details: nil))
+          }
+        }
+      }
+    }
+  }
+
+  /// raw RGBA(premultiplied, alpha last, top-left origin) bytes → `CVPixelBuffer`
+  /// (32BGRA). CGImage로 감싼 뒤 BGRA 컨텍스트에 그려 CoreGraphics가 채널
+  /// 순서 변환을 처리한다(compose의 UIImage 경로와 동일 결과). Flutter는
+  /// rawRgba(premultiplied)로 뽑아 넘긴다 — frame이 불투명이라 straight와 동일.
+  private func makePixelBuffer(fromRawRGBA data: Data, width: Int, height: Int, size: CGSize) -> CVPixelBuffer? {
+    guard let provider = CGDataProvider(data: data as CFData) else { return nil }
+    let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+    guard let cgImage = CGImage(
+      width: width,
+      height: height,
+      bitsPerComponent: 8,
+      bitsPerPixel: 32,
+      bytesPerRow: width * 4,
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: bitmapInfo,
+      provider: provider,
+      decode: nil,
+      shouldInterpolate: false,
+      intent: .defaultIntent
+    ) else {
+      return nil
+    }
+    return makePixelBuffer(fromCGImage: cgImage, size: size)
+  }
+
   // MARK: - Pixel buffer
 
   /// `UIImage` → `CVPixelBuffer` (32BGRA, target size로 리사이즈/letterbox 없이
   /// scale-to-fit). 입력이 이미 1080×1920이면 그대로 1:1 그려짐.
   private func makePixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
+    guard let cgImage = image.cgImage else { return nil }
+    return makePixelBuffer(fromCGImage: cgImage, size: size)
+  }
+
+  /// 공통 CGImage → CVPixelBuffer(32BGRA) 변환. 검정 fill 후 1:1(또는 scale) draw.
+  private func makePixelBuffer(fromCGImage cgImage: CGImage, size: CGSize) -> CVPixelBuffer? {
     let attrs: [CFString: Any] = [
       kCVPixelBufferCGImageCompatibilityKey: true,
       kCVPixelBufferCGBitmapContextCompatibilityKey: true,
@@ -253,14 +452,12 @@ final class VideoComposer {
     }
 
     // CVPixelBufferCreate는 메모리를 0으로 초기화하지 않으므로(garbage),
-    // PNG가 fully opaque가 아니면 이전 frame 버퍼 잔여물이 비쳐 잔상처럼
+    // 소스가 fully opaque가 아니면 이전 frame 버퍼 잔여물이 비쳐 잔상처럼
     // 보일 수 있다. 그리기 전 검정으로 fill해 garbage를 가린다.
     context.setFillColor(UIColor.black.cgColor)
     context.fill(CGRect(origin: .zero, size: size))
 
-    if let cgImage = image.cgImage {
-      context.draw(cgImage, in: CGRect(origin: .zero, size: size))
-    }
+    context.draw(cgImage, in: CGRect(origin: .zero, size: size))
     return buffer
   }
 

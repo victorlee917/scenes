@@ -265,7 +265,7 @@ class _StackShareViewState extends State<StackShareView>
       fit: StackFit.expand,
       clipBehavior: Clip.hardEdge,
       children: [
-        const ShareTemplateBackdrop(),
+        const RepaintBoundary(child: ShareTemplateBackdrop()),
         // 사진 콘텐츠(photo 카드 + 캐니스터)에만 필름 룩 필터 — backdrop
         // 배경과 하단 텍스트엔 적용되지 않도록 별도 레이어로 감싼다.
         _filtered(
@@ -376,7 +376,8 @@ class _StackShareViewState extends State<StackShareView>
       top: center.dy - photoH / 2,
       width: photoW,
       height: photoH,
-      child: _PhotoCard(url: widget.frames[index].url),
+      // 등장~소멸 사이 내용 불변 — RepaintBoundary로 shadow+리샘플 래스터 캐시.
+      child: RepaintBoundary(child: _PhotoCard(url: widget.frames[index].url)),
     );
   }
 

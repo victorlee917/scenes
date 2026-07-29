@@ -46,6 +46,42 @@ class VideoComposer {
     }
   }
 
+  /// 스트리밍 인코딩 시작(iOS/Android 공통). native가 encoder를 열어두고
+  /// [appendRawFrame]로 들어오는 raw RGBA frame을 즉시 인코딩한다. PNG로 굽어
+  /// 디스크에 쌓는 과정을 생략해 render 병목(PNG 압축)을 없앤다.
+  Future<void> beginCompose({
+    required Duration frameDuration,
+    required String outputPath,
+  }) async {
+    await _channel.invokeMethod<void>('beginCompose', {
+      'frameDuration': frameDuration.inMicroseconds / 1e6,
+      'outputPath': outputPath,
+    });
+  }
+
+  /// raw RGBA(straight, top-left origin, width*height*4 bytes) frame 한 장을
+  /// 인코더에 밀어넣는다. Dart가 결과를 await하므로 프레임당 backpressure가 걸림.
+  Future<void> appendRawFrame({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+  }) async {
+    await _channel.invokeMethod<void>('appendRawFrame', {
+      'bytes': bytes,
+      'width': width,
+      'height': height,
+    });
+  }
+
+  /// 스트리밍 인코딩 종료 — EOS flush 후 MP4 finalize. 완성된 영상 path 반환.
+  Future<String> endCompose() async {
+    final result = await _channel.invokeMethod<String>('endCompose');
+    if (result == null || result.isEmpty) {
+      throw StateError('endCompose returned empty path');
+    }
+    return result;
+  }
+
   /// Instagram Stories 직접 attach 시도. native가 비디오 데이터를 UIPasteboard
   /// 메타 키와 함께 세팅한 후 `instagram-stories://share` URL을 연다. IG 미설치
   /// 등으로 열 수 없으면 `unavailable` 코드의 PlatformException이 throw돼 호출자

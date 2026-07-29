@@ -12,9 +12,86 @@ import 'package:http/http.dart' as http;
 import '../widgets/share_frame_view.dart';
 import '../widgets/snake_share_view.dart';
 import '../widgets/stack_share_view.dart';
+import 'video_composer.dart';
 
 /// 진행률 콜백. (current, total) — 둘 다 1-based.
 typedef RenderProgress = void Function(int current, int total);
+
+/// 렌더된 frame(ui.Image)의 소비자. 캡처 파이프라인을 출력 방식과 분리한다.
+/// - [PngFileSink]: PNG로 굽어 디스크에 저장(iOS 인코더가 파일 경로로 읽음).
+/// - [NativeStreamSink]: raw RGBA로 뽑아 Android native encoder로 즉시 스트리밍
+///   (PNG 압축·디스크 적재를 모두 생략 — render 병목 제거).
+///
+/// 구현은 [add]에서 넘어온 [ui.Image]의 dispose 책임을 진다.
+abstract class ShareFrameSink {
+  Future<void> add(ui.Image image, int index);
+
+  /// 남은 비동기 작업(파이프라인 in-flight frame 등) 완료 대기. 렌더 루프가
+  /// 끝난 뒤, 인코딩 finalize(endCompose) 전에 반드시 호출.
+  Future<void> finish();
+}
+
+/// frame을 [outputDir]에 `<prefix>_NNNN.png`로 굽어 [paths]에 경로를 모은다.
+class PngFileSink implements ShareFrameSink {
+  PngFileSink(this.outputDir, {this.prefix = 'frame', this.pad = 4});
+  final Directory outputDir;
+  final String prefix;
+  final int pad;
+  final List<String> paths = [];
+
+  @override
+  Future<void> add(ui.Image image, int index) async {
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (byteData == null) return;
+    final path =
+        '${outputDir.path}/${prefix}_${index.toString().padLeft(pad, '0')}.png';
+    await File(path).writeAsBytes(byteData.buffer.asUint8List());
+    paths.add(path);
+  }
+
+  @override
+  Future<void> finish() async {}
+}
+
+/// frame을 raw RGBA(straight)로 뽑아 native streaming encoder로 append.
+/// 호출 전 [VideoComposer.beginCompose]가 호출돼 있어야 하고, 모든 frame append
+/// 후 호출자가 [VideoComposer.endCompose]로 마무리한다. Dart가 append를
+/// await하므로 프레임당 backpressure가 걸려 메모리에 한 장씩만 존재.
+class NativeStreamSink implements ShareFrameSink {
+  int _count = 0;
+  int get count => _count;
+
+  // 직전 프레임의 native append. 다음 프레임 render(paint+toImage+readback,
+  // UI isolate) 동안 native encoder(별도 스레드)가 인코딩을 병렬로 진행하도록,
+  // append를 await하지 않고 걸어둔다. in-flight는 최대 1프레임(다음 add에서
+  // 대기)이라 메모리는 ~2 buffer로 한정.
+  Future<void> _pending = Future<void>.value();
+
+  @override
+  Future<void> add(ui.Image image, int index) async {
+    final width = image.width;
+    final height = image.height;
+    // rawRgba(premultiplied, GPU 네이티브 포맷) — rawStraightRgba는 un-premultiply
+    // 변환이 들어가 리드백이 느리다. frame이 불투명(alpha=255)이라 두 포맷의
+    // RGB 값이 동일하므로 변환 없는 rawRgba를 써서 리드백을 단축한다.
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    image.dispose();
+    if (byteData == null) return;
+    final bytes = byteData.buffer.asUint8List();
+    // 이전 프레임 append 완료 대기(backpressure) → 이번 프레임은 걸어두고 반환.
+    await _pending;
+    _pending = VideoComposer.instance.appendRawFrame(
+      bytes: bytes,
+      width: width,
+      height: height,
+    );
+    _count++;
+  }
+
+  @override
+  Future<void> finish() => _pending;
+}
 
 /// 공유 영상의 frame들을 1080×1920 PNG로 굽어 디스크에 저장.
 ///
@@ -40,16 +117,15 @@ class ShareFrameRenderer {
   static final double _pixelRatio =
       kShareFrameOutputWidth / kShareFrameLogicalWidth;
 
-  Future<List<String>> renderFrames({
+  Future<void> renderFrames({
     required BuildContext context,
     required List<ShareFrame> frames,
     required ColorFilter? colorFilter,
-    required Directory outputDir,
+    required ShareFrameSink sink,
     RenderProgress? onProgress,
     http.Client? client,
   }) async {
     final ownClient = client ?? http.Client();
-    final paths = <String>[];
     try {
       for (var i = 0; i < frames.length; i++) {
         final frame = frames[i];
@@ -60,19 +136,16 @@ class ShareFrameRenderer {
         if (!context.mounted) {
           throw StateError('Context unmounted during render');
         }
-        final pngBytes = await _captureFrame(
+        final image = await _captureFrame(
           context: context,
           frame: frame,
           imageBytes: bytes,
           colorFilter: colorFilter,
         );
-        final path =
-            '${outputDir.path}/frame_${i.toString().padLeft(3, '0')}.png';
-        await File(path).writeAsBytes(pngBytes);
-        paths.add(path);
+        await sink.add(image, i);
         onProgress?.call(i + 1, frames.length);
       }
-      return paths;
+      return;
     } finally {
       if (client == null) ownClient.close();
     }
@@ -89,11 +162,11 @@ class ShareFrameRenderer {
   /// 컨택트 시트 animation(reveal → hold → hide → hold)을 매 frame PNG로
   /// 굽어 슬라이드쇼 video pipeline에 그대로 넘긴다. 사진 수에 따라 cycle
   /// 총 길이가 동적이라 영상 길이도 자동 비례.
-  Future<List<String>> renderContactSheetAnimation({
+  Future<void> renderContactSheetAnimation({
     required BuildContext context,
     required List<ShareFrame> frames,
     required ColorFilter? colorFilter,
-    required Directory outputDir,
+    required ShareFrameSink sink,
     required String sceneCoverUrl,
     required int sceneNumber,
     required String sceneTitle,
@@ -183,7 +256,6 @@ class ShareFrameRenderer {
       );
       overlay.insert(entry);
 
-      final paths = <String>[];
       try {
         // 첫 paint 대기.
         await SchedulerBinding.instance.endOfFrame;
@@ -197,20 +269,13 @@ class ShareFrameRenderer {
           final renderObject = boundaryKey.currentContext?.findRenderObject();
           if (renderObject is! RenderRepaintBoundary) continue;
           final image = await renderObject.toImage(pixelRatio: _pixelRatio);
-          final byteData =
-              await image.toByteData(format: ui.ImageByteFormat.png);
-          image.dispose();
-          if (byteData == null) continue;
-          final path =
-              '${outputDir.path}/contact_${i.toString().padLeft(4, '0')}.png';
-          await File(path).writeAsBytes(byteData.buffer.asUint8List());
-          paths.add(path);
+          await sink.add(image, i);
           onProgress?.call(i + 1, frameCount);
         }
       } finally {
         entry.remove();
       }
-      return paths;
+      return;
     } finally {
       if (client == null) ownClient.close();
       for (final p in providers) {
@@ -223,11 +288,11 @@ class ShareFrameRenderer {
   /// frame PNG로 굽어 video pipeline에 넘긴다. 사진 수에 따라 cycle 총 길이가
   /// 동적이라 영상 길이도 자동 비례. 구조는 [renderContactSheetAnimation]과
   /// 동일 — 다른 점은 mount하는 View와 totalCycleMs 산출만.
-  Future<List<String>> renderStackAnimation({
+  Future<void> renderStackAnimation({
     required BuildContext context,
     required List<ShareFrame> frames,
     required ColorFilter? colorFilter,
-    required Directory outputDir,
+    required ShareFrameSink sink,
     required String sceneCoverUrl,
     required int sceneNumber,
     required String sceneTitle,
@@ -314,7 +379,6 @@ class ShareFrameRenderer {
       );
       overlay.insert(entry);
 
-      final paths = <String>[];
       try {
         await SchedulerBinding.instance.endOfFrame;
         await SchedulerBinding.instance.endOfFrame;
@@ -327,20 +391,13 @@ class ShareFrameRenderer {
           final renderObject = boundaryKey.currentContext?.findRenderObject();
           if (renderObject is! RenderRepaintBoundary) continue;
           final image = await renderObject.toImage(pixelRatio: _pixelRatio);
-          final byteData =
-              await image.toByteData(format: ui.ImageByteFormat.png);
-          image.dispose();
-          if (byteData == null) continue;
-          final path =
-              '${outputDir.path}/stack_${i.toString().padLeft(4, '0')}.png';
-          await File(path).writeAsBytes(byteData.buffer.asUint8List());
-          paths.add(path);
+          await sink.add(image, i);
           onProgress?.call(i + 1, frameCount);
         }
       } finally {
         entry.remove();
       }
-      return paths;
+      return;
     } finally {
       if (client == null) ownClient.close();
       for (final p in providers) {
@@ -351,11 +408,11 @@ class ShareFrameRenderer {
 
   /// Snake animation — 화면 중심을 도는 5장 trail. renderStackAnimation과
   /// 구조 동일, mount하는 View와 totalCycleMs만 다름.
-  Future<List<String>> renderSnakeAnimation({
+  Future<void> renderSnakeAnimation({
     required BuildContext context,
     required List<ShareFrame> frames,
     required ColorFilter? colorFilter,
-    required Directory outputDir,
+    required ShareFrameSink sink,
     required String sceneCoverUrl,
     required int sceneNumber,
     required String sceneTitle,
@@ -437,7 +494,6 @@ class ShareFrameRenderer {
       );
       overlay.insert(entry);
 
-      final paths = <String>[];
       try {
         await SchedulerBinding.instance.endOfFrame;
         await SchedulerBinding.instance.endOfFrame;
@@ -450,20 +506,13 @@ class ShareFrameRenderer {
           final renderObject = boundaryKey.currentContext?.findRenderObject();
           if (renderObject is! RenderRepaintBoundary) continue;
           final image = await renderObject.toImage(pixelRatio: _pixelRatio);
-          final byteData =
-              await image.toByteData(format: ui.ImageByteFormat.png);
-          image.dispose();
-          if (byteData == null) continue;
-          final path =
-              '${outputDir.path}/snake_${i.toString().padLeft(4, '0')}.png';
-          await File(path).writeAsBytes(byteData.buffer.asUint8List());
-          paths.add(path);
+          await sink.add(image, i);
           onProgress?.call(i + 1, frameCount);
         }
       } finally {
         entry.remove();
       }
-      return paths;
+      return;
     } finally {
       if (client == null) ownClient.close();
       for (final p in providers) {
@@ -472,144 +521,7 @@ class ShareFrameRenderer {
     }
   }
 
-  /// 컨택트 시트(여러 thumb이 한 정사각 그리드에 박힌 형태)를 1080×1920 PNG
-  /// 한 장으로 캡처. 모든 frame의 thumb을 미리 다운로드 + precache한 뒤
-  /// ContactSheetView를 staticFull=true로 Overlay에 mount, RepaintBoundary로
-  /// 추출.
-  Future<String> renderContactSheet({
-    required BuildContext context,
-    required List<ShareFrame> frames,
-    required ColorFilter? colorFilter,
-    required Directory outputDir,
-    required String sceneCoverUrl,
-    required int sceneNumber,
-    required String sceneTitle,
-    RenderProgress? onProgress,
-    http.Client? client,
-  }) async {
-    final ownClient = client ?? http.Client();
-    final providers = <MemoryImage>[];
-    try {
-      // 모든 frame thumb 다운로드 + 디코딩 완료. paint 시 동기 그림 보장.
-      // ContactSheetView는 NetworkImage(frame.url)로 그리니까 같은 URL을
-      // 받아야 함 — renderUrl(full)을 받으면 view가 thumb을 추가로 또
-      // 다운로드해서 egress가 두 배.
-      for (var i = 0; i < frames.length; i++) {
-        if (!context.mounted) {
-          throw StateError('Context unmounted during contact sheet render');
-        }
-        final bytes = await _download(frames[i].url, ownClient);
-        if (!context.mounted) break;
-        final provider = MemoryImage(bytes);
-        await precacheImage(provider, context);
-        providers.add(provider);
-        onProgress?.call(i + 1, frames.length + 1);
-      }
-      if (!context.mounted) {
-        throw StateError('Context unmounted before contact sheet capture');
-      }
-      // ContactSheetView가 자체적으로 NetworkImage(frame.url)을 만들어 그리니까
-      // 같은 URL의 이미지를 우리가 미리 precache(MemoryImage)해도 ImageCache는
-      // URL 키 매칭이 안 됨. 대신 NetworkImage도 함께 precache 한 사이클.
-      for (final f in frames) {
-        if (!context.mounted) break;
-        try {
-          await precacheImage(NetworkImage(f.url), context);
-        } catch (_) {}
-      }
-      if (!context.mounted) {
-        throw StateError('Context unmounted before contact sheet capture');
-      }
-      final pngBytes = await _captureContactSheet(
-        context: context,
-        frames: frames,
-        colorFilter: colorFilter,
-        sceneCoverUrl: sceneCoverUrl,
-        sceneNumber: sceneNumber,
-        sceneTitle: sceneTitle,
-      );
-      final path = '${outputDir.path}/contact_sheet.png';
-      await File(path).writeAsBytes(pngBytes);
-      onProgress?.call(frames.length + 1, frames.length + 1);
-      return path;
-    } finally {
-      if (client == null) ownClient.close();
-      // capture 후 batch precache가 남긴 MemoryImage들 정리.
-      for (final p in providers) {
-        PaintingBinding.instance.imageCache.evict(p);
-      }
-    }
-  }
-
-  Future<Uint8List> _captureContactSheet({
-    required BuildContext context,
-    required List<ShareFrame> frames,
-    required ColorFilter? colorFilter,
-    required String sceneCoverUrl,
-    required int sceneNumber,
-    required String sceneTitle,
-  }) async {
-    final boundaryKey = GlobalKey();
-    final overlay = Overlay.of(context);
-    final mediaQuery = MediaQuery.of(context);
-    final theme = Theme.of(context);
-    final entry = OverlayEntry(
-      builder: (_) {
-        return Positioned(
-          left: -100000,
-          top: -100000,
-          child: MediaQuery(
-            data: mediaQuery,
-            child: Theme(
-              data: theme,
-              child: Directionality(
-                textDirection: TextDirection.ltr,
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: RepaintBoundary(
-                    key: boundaryKey,
-                    child: SizedBox(
-                      width: _logicalWidth,
-                      height: _logicalHeight,
-                      child: ContactSheetView(
-                        frames: frames,
-                        colorFilter: colorFilter,
-                        sceneCoverUrl: sceneCoverUrl,
-                        sceneNumber: sceneNumber,
-                        sceneTitle: sceneTitle,
-                        isPlaying: false,
-                        staticFull: true,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-    overlay.insert(entry);
-    try {
-      await SchedulerBinding.instance.endOfFrame;
-      await SchedulerBinding.instance.endOfFrame;
-      final renderObject = boundaryKey.currentContext?.findRenderObject();
-      if (renderObject is! RenderRepaintBoundary) {
-        throw StateError('RepaintBoundary not found');
-      }
-      final image = await renderObject.toImage(pixelRatio: _pixelRatio);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (byteData == null) {
-        throw StateError('Failed to encode contact sheet PNG');
-      }
-      return byteData.buffer.asUint8List();
-    } finally {
-      entry.remove();
-    }
-  }
-
-  Future<Uint8List> _captureFrame({
+  Future<ui.Image> _captureFrame({
     required BuildContext context,
     required ShareFrame frame,
     required Uint8List imageBytes,
@@ -674,13 +586,9 @@ class ShareFrameRenderer {
       if (renderObject is! RenderRepaintBoundary) {
         throw StateError('RepaintBoundary not found');
       }
-      final image = await renderObject.toImage(pixelRatio: _pixelRatio);
-      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      image.dispose();
-      if (byteData == null) {
-        throw StateError('Failed to encode frame to PNG');
-      }
-      return byteData.buffer.asUint8List();
+      // toImage로 뽑은 ui.Image를 그대로 반환 — 직렬화(PNG/raw)는 sink가 담당.
+      // 호출자(sink)가 dispose 책임.
+      return await renderObject.toImage(pixelRatio: _pixelRatio);
     } finally {
       entry.remove();
       // 100장 batch 동안 ImageCache(100MB / 1000 entries)가 가득 차면 LRU
