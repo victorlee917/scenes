@@ -311,7 +311,7 @@ class _SnakeShareViewState extends State<SnakeShareView>
       fit: StackFit.expand,
       clipBehavior: Clip.hardEdge,
       children: [
-        const ShareTemplateBackdrop(),
+        const RepaintBoundary(child: ShareTemplateBackdrop()),
         _filtered(
           Stack(
             fit: StackFit.expand,

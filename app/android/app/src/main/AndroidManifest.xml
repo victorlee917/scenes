@@ -65,6 +65,17 @@
             android:name="com.yalantis.ucrop.UCropActivity"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
+        <!-- 합성한 공유 영상을 Instagram 스토리 등 외부 앱에 content:// URI로
+             넘기기 위한 FileProvider (VideoComposerPlugin.shareToInstagramStory). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"/>
+        </provider>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -86,5 +97,10 @@
         <!-- KakaoTalk 앱 설치 감지 -->
         <package
             android:name="com.kakao.talk"/>
+        <!-- Instagram 스토리 공유(ADD_TO_STORY) resolveActivity용 — Android 11+
+             패키지 가시성 제한 때문에 명시 필요. 없으면 IG 설치돼도 안 보여
+             항상 unavailable로 fallback된다. -->
+        <package
+            android:name="com.instagram.android"/>
     </queries>
 </manifest>

@@ -2191,9 +2191,13 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     });
 
     // 단계별 onProgress 콜백을 통합 0..1 progress로 변환하는 헬퍼.
+    // 스트리밍(iOS/Android)에선 render 루프가 인코딩까지 포함하므로 render
+    // 진행을 거의 전체 바(0..renderProgressEnd)에 매핑해 실제 소요시간에
+    // 비례하게 한다. 배치(fallback)에선 0..0.60만 쓰고 이후 encodeTick이 이어감.
+    var renderProgressEnd = _renderProgressEnd;
     void renderTick(int current, int total) {
       if (total <= 0) return;
-      _setProgress(_renderProgressEnd * (current / total));
+      _setProgress(renderProgressEnd * (current / total));
     }
 
     void encodeTick(int current, int total) {
@@ -2203,88 +2207,117 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     }
 
     Directory? tempDir;
+    // Android 스트리밍 인코딩 세션이 열려 있는지 — 예외/조기 return 시 finally에서
+    // endCompose로 native encoder를 반드시 닫아 자원 누수를 막는다.
+    var streamingSessionOpen = false;
     try {
       tempDir = await Directory.systemTemp.createTemp('scenes_share_');
       if (!mounted) return;
 
-      // 1) 페이지 종류에 따라 PNG frame들을 생성. 각 분기는 (framePaths, fps,
-      // outputName)을 결정 — 이후 인코딩/디스패치 단계는 공통.
-      final List<String> framePaths;
-      final int fps;
-      final String outputName;
-      // 애니메이션 템플릿은 24fps로 통일 — 12fps 이하는 재생이 끊겨 보임.
-      // 소스 PNG 캡처 양은 늘지만(약 2배) 결과 영상의 부드러움이 훨씬 좋아짐.
+      // 1) 렌더 파라미터 결정. 애니메이션은 24fps로 통일(12fps 이하는 끊겨 보임),
+      //    슬라이드쇼(page 3)는 _frameDuration의 역수.
       const animationFps = 24;
-      if (_previewPage == 0) {
-        framePaths =
-            await ShareFrameRenderer.instance.renderContactSheetAnimation(
-          context: context,
-          frames: widget.frames,
-          colorFilter: _colorFilterFor(widget.photoFilter),
-          outputDir: tempDir,
-          sceneCoverUrl: widget.sceneCoverUrl,
-          sceneNumber: widget.sceneNumber,
-          sceneTitle: widget.sceneTitle,
-          fps: animationFps,
-          onProgress: renderTick,
-        );
-        fps = animationFps;
-        outputName = 'scenes_contact_sheet.mp4';
-      } else if (_previewPage == 1) {
-        framePaths = await ShareFrameRenderer.instance.renderSnakeAnimation(
-          context: context,
-          frames: widget.frames,
-          colorFilter: _colorFilterFor(widget.photoFilter),
-          outputDir: tempDir,
-          sceneCoverUrl: widget.sceneCoverUrl,
-          sceneNumber: widget.sceneNumber,
-          sceneTitle: widget.sceneTitle,
-          fps: animationFps,
-          onProgress: renderTick,
-        );
-        fps = animationFps;
-        outputName = 'scenes_snake.mp4';
-      } else if (_previewPage == 2) {
-        framePaths = await ShareFrameRenderer.instance.renderStackAnimation(
-          context: context,
-          frames: widget.frames,
-          colorFilter: _colorFilterFor(widget.photoFilter),
-          outputDir: tempDir,
-          sceneCoverUrl: widget.sceneCoverUrl,
-          sceneNumber: widget.sceneNumber,
-          sceneTitle: widget.sceneTitle,
-          fps: animationFps,
-          onProgress: renderTick,
-        );
-        fps = animationFps;
-        outputName = 'scenes_stack.mp4';
-      } else {
-        framePaths = await ShareFrameRenderer.instance.renderFrames(
-          context: context,
-          frames: widget.frames,
-          colorFilter: _colorFilterFor(widget.photoFilter),
-          outputDir: tempDir,
-          onProgress: renderTick,
-        );
-        // 슬라이드쇼는 _frameDuration으로 timing 결정 — fps는 그 역수.
-        fps = (1000 / _frameDuration.inMilliseconds).round();
-        outputName = 'scenes_share.mp4';
-      }
-      if (!mounted) return;
-      _setProgress(_renderProgressEnd);
-
-      // 2) PNG 시퀀스 → MP4 인코딩.
+      final int fps = _previewPage == 3
+          ? (1000 / _frameDuration.inMilliseconds).round()
+          : animationFps;
+      final Duration frameDuration = _previewPage == 3
+          ? _frameDuration
+          : Duration(milliseconds: (1000 / fps).round());
+      final outputName = switch (_previewPage) {
+        0 => 'scenes_contact_sheet.mp4',
+        1 => 'scenes_snake.mp4',
+        2 => 'scenes_stack.mp4',
+        _ => 'scenes_share.mp4',
+      };
       final outputPath = '${tempDir.path}/$outputName';
-      final videoPath = await VideoComposer.instance.composeVideo(
-        framePaths: framePaths,
-        // 슬라이드쇼(page 3)는 _frameDuration으로 timing 결정, 나머지(컨택트
-        // 시트/스네이크/스택)는 fps의 역수.
-        frameDuration: _previewPage == 3
-            ? _frameDuration
-            : Duration(milliseconds: (1000 / fps).round()),
-        outputPath: outputPath,
-        onProgress: encodeTick,
-      );
+
+      // 2) frame 소비 sink. iOS/Android 모두 native encoder로 직접 스트리밍 —
+      //    render한 frame을 raw RGBA로 바로 인코딩해 PNG 압축/디스크 적재를
+      //    생략(render 병목 제거). PngFileSink+composeVideo 배치 경로는 미지원
+      //    플랫폼용 fallback으로만 남겨둔다.
+      final bool streaming = Platform.isAndroid || Platform.isIOS;
+      final ShareFrameSink sink;
+      if (streaming) {
+        // 인코딩이 render 루프에 인라인되므로 render 진행을 거의 전체 바에
+        // 매핑 — 남은 구간(endCompose finalize)은 짧아 98%에서 마감.
+        renderProgressEnd = 0.98;
+        await VideoComposer.instance.beginCompose(
+          frameDuration: frameDuration,
+          outputPath: outputPath,
+        );
+        streamingSessionOpen = true;
+        sink = NativeStreamSink();
+      } else {
+        sink = PngFileSink(tempDir);
+      }
+
+      // 3) 페이지별 렌더 — sink로 frame 방출(스트리밍 시 인코딩까지 인라인).
+      if (!mounted) return;
+      final colorFilter = _colorFilterFor(widget.photoFilter);
+      switch (_previewPage) {
+        case 0:
+          await ShareFrameRenderer.instance.renderContactSheetAnimation(
+            context: context,
+            frames: widget.frames,
+            colorFilter: colorFilter,
+            sink: sink,
+            sceneCoverUrl: widget.sceneCoverUrl,
+            sceneNumber: widget.sceneNumber,
+            sceneTitle: widget.sceneTitle,
+            fps: animationFps,
+            onProgress: renderTick,
+          );
+        case 1:
+          await ShareFrameRenderer.instance.renderSnakeAnimation(
+            context: context,
+            frames: widget.frames,
+            colorFilter: colorFilter,
+            sink: sink,
+            sceneCoverUrl: widget.sceneCoverUrl,
+            sceneNumber: widget.sceneNumber,
+            sceneTitle: widget.sceneTitle,
+            fps: animationFps,
+            onProgress: renderTick,
+          );
+        case 2:
+          await ShareFrameRenderer.instance.renderStackAnimation(
+            context: context,
+            frames: widget.frames,
+            colorFilter: colorFilter,
+            sink: sink,
+            sceneCoverUrl: widget.sceneCoverUrl,
+            sceneNumber: widget.sceneNumber,
+            sceneTitle: widget.sceneTitle,
+            fps: animationFps,
+            onProgress: renderTick,
+          );
+        default:
+          await ShareFrameRenderer.instance.renderFrames(
+            context: context,
+            frames: widget.frames,
+            colorFilter: colorFilter,
+            sink: sink,
+            onProgress: renderTick,
+          );
+      }
+      // 파이프라인에 걸린 마지막 frame append 완료 대기 후 finalize.
+      await sink.finish();
+      if (!mounted) return;
+      _setProgress(renderProgressEnd);
+
+      // 4) 인코딩 마무리 → 완성 영상 path.
+      final String videoPath;
+      if (streaming) {
+        videoPath = await VideoComposer.instance.endCompose();
+        streamingSessionOpen = false;
+      } else {
+        videoPath = await VideoComposer.instance.composeVideo(
+          framePaths: (sink as PngFileSink).paths,
+          frameDuration: frameDuration,
+          outputPath: outputPath,
+          onProgress: encodeTick,
+        );
+      }
       if (!mounted) return;
       _setProgress(_encodeProgressEnd);
 
@@ -2303,8 +2336,6 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
     } catch (e) {
       debugPrint('share render/dispatch failed: $e');
       if (!mounted) return;
-      // 디버깅 중 — 토스트에 raw 에러 메시지를 노출. 안정화 후 generic 메시지로
-      // 되돌릴 것.
       AppToast.show(
         context,
         AppLocalizations.of(context).playSceneShareFailedToast,
@@ -2314,6 +2345,13 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
         _overallProgress = 0;
       });
     } finally {
+      // 예외/조기 return으로 스트리밍 세션이 열린 채 남았으면 native encoder를
+      // 닫아 자원 누수 방지(best-effort — 결과는 버림).
+      if (streamingSessionOpen) {
+        try {
+          await VideoComposer.instance.endCompose();
+        } catch (_) {}
+      }
       // 임시 frame PNG들과 MP4 모두 정리. PhotoManager.saveVideo는 라이브러리에
       // 복사본 생성, SharePlus도 OS가 복사본 보유, IG는 pasteboard에 데이터로
       // 복사 — 따라서 source temp dir은 안전하게 통째로 지움.
@@ -2326,24 +2364,52 @@ class _ShareSheetState extends ConsumerState<_ShareSheet> {
   }
 
   Future<void> _saveToGallery(String videoPath) async {
-    final permission = await PhotoManager.requestPermissionExtend(
-      requestOption: const PermissionRequestOption(
-        iosAccessLevel: IosAccessLevel.addOnly,
-      ),
-    );
-    if (!permission.isAuth) {
-      if (mounted) {
-        AppToast.show(
-          context,
-          AppLocalizations.of(context).playScenePhotoPermissionToast,
-        );
+    // iOS: 사진 라이브러리 add-only 권한이 반드시 필요 — 게이트로 막는다.
+    // Android: scoped storage(API 29+)라 자기 앱이 만든 미디어는 READ_MEDIA_*
+    // read 권한 없이도 MediaStore에 insert할 수 있다. 오히려 read 권한을
+    // 게이트로 걸면(동영상인데 READ_MEDIA_IMAGES만 선언돼 있어) 저장이
+    // "권한 필요"로 잘못 막힌다. 그래서 Android는 권한 게이트를 건너뛰고
+    // photo_manager 내부 권한 체크도 우회한 뒤 바로 저장한다.
+    if (Platform.isIOS) {
+      final permission = await PhotoManager.requestPermissionExtend(
+        requestOption: const PermissionRequestOption(
+          iosAccessLevel: IosAccessLevel.addOnly,
+        ),
+      );
+      // hasAccess = authorized || limited. limited(일부 사진만 허용)여도 add는
+      // 가능하므로 authorized만 요구하지 않는다.
+      if (!permission.hasAccess) {
+        if (mounted) {
+          AppToast.show(
+            context,
+            AppLocalizations.of(context).playScenePhotoPermissionToast,
+          );
+        }
+        return;
       }
-      return;
+      await PhotoManager.editor.saveVideo(
+        File(videoPath),
+        title: 'scenes_share_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+    } else {
+      // Android: 내부 read-permission 체크를 저장 구간에만 껐다 되돌린다.
+      // 전역 true로 두면 이후 사진 선택(picker) 읽기가 권한 없이 빈 결과를
+      // 반환할 수 있어 반드시 finally에서 원복.
+      try {
+        await PhotoManager.setIgnorePermissionCheck(true);
+        // relativePath로 DCIM/Scenes에 저장 — photo_manager 기본값은 Movies/
+        // 인데, Google Photos 등은 Movies/를 메인 타임라인에 안 띄우고 "기기
+        // 폴더"에만 숨겨 "저장했는데 앨범에 안 보임" 문제가 난다. DCIM 아래로
+        // 넣으면 카메라 롤 타임라인에 바로 뜨고 Scenes 앨범으로도 묶인다.
+        await PhotoManager.editor.saveVideo(
+          File(videoPath),
+          title: 'scenes_share_${DateTime.now().millisecondsSinceEpoch}.mp4',
+          relativePath: 'DCIM/Scenes',
+        );
+      } finally {
+        await PhotoManager.setIgnorePermissionCheck(false);
+      }
     }
-    await PhotoManager.editor.saveVideo(
-      File(videoPath),
-      title: 'scenes_share_${DateTime.now().millisecondsSinceEpoch}.mp4',
-    );
     if (mounted) {
       AppToast.show(
         context,

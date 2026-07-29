@@ -543,7 +543,8 @@ class _ContactSheetViewState extends State<ContactSheetView>
           fit: StackFit.expand,
           children: [
             // 다른 공유 템플릿과 동일한 그라데이션 배경 사용 — 톤 통일.
-            const ShareTemplateBackdrop(),
+            // 정적이라 RepaintBoundary로 그라데이션 래스터를 캐시.
+            const RepaintBoundary(child: ShareTemplateBackdrop()),
             // 사진 셀에만 필름 룩 필터 — backdrop 배경엔 적용되지 않도록.
             // bottom padding을 60으로 키워 그리드 아래에 title/date 푸터 영역
             // (~48) 확보. 다른 템플릿(스택/스네이크/슬라이드쇼)과 톤 통일.
@@ -562,9 +563,12 @@ class _ContactSheetViewState extends State<ContactSheetView>
                               child: () {
                                 final gridIdx = r * _cols + c;
                                 if (gridIdx == _centerCellIndex) {
-                                  return _CanisterCenterCell(
-                                    coverUrl: widget.sceneCoverUrl,
-                                    title: widget.sceneTitle,
+                                  // 정적 — RepaintBoundary로 캐시.
+                                  return RepaintBoundary(
+                                    child: _CanisterCenterCell(
+                                      coverUrl: widget.sceneCoverUrl,
+                                      title: widget.sceneTitle,
+                                    ),
                                   );
                                 }
                                 final filledIdx = _gridToFilled[gridIdx];
@@ -572,16 +576,23 @@ class _ContactSheetViewState extends State<ContactSheetView>
                                   // 빈 셀은 backdrop이 비치도록 투명.
                                   return const SizedBox.shrink();
                                 }
+                                // RepaintBoundary로 셀의 리샘플된 래스터를 캐시.
+                                // animation은 opacity만 바꾸므로(내용 불변) 각
+                                // 셀은 매 frame 다시 그려지지 않고 opacity 합성만
+                                // 재실행 — 120셀 BoxFit.cover 리샘플이 render
+                                // 병목이었는데 이걸 제거한다.
                                 return Opacity(
                                   opacity:
                                       _opacityFor(filledIdx).clamp(0.0, 1.0),
-                                  child: Image(
-                                    image: NetworkImage(cells[filledIdx].url),
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
-                                    errorBuilder: (_, _, _) =>
-                                        const ColoredBox(
-                                            color: Color(0xFF1C1C1E)),
+                                  child: RepaintBoundary(
+                                    child: Image(
+                                      image: NetworkImage(cells[filledIdx].url),
+                                      fit: BoxFit.cover,
+                                      gaplessPlayback: true,
+                                      errorBuilder: (_, _, _) =>
+                                          const ColoredBox(
+                                              color: Color(0xFF1C1C1E)),
+                                    ),
                                   ),
                                 );
                               }(),
@@ -595,31 +606,34 @@ class _ContactSheetViewState extends State<ContactSheetView>
               ),
             )),
             // 푸터 — title + date range. 다른 템플릿과 동일 위치·스타일.
+            // 정적(display 폰트 래스터화가 비쌈) — RepaintBoundary로 캐시.
             Positioned(
               left: 12,
               right: 12,
               bottom: 12,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.sceneTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: AppTypography.display(9, text: widget.sceneTitle)
-                        .copyWith(color: Colors.white),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    _dateRangeLabel(widget.frames),
-                    textAlign: TextAlign.center,
-                    style: AppTypography.body(5).copyWith(
-                      color: Colors.white.withValues(alpha: 0.4),
-                      letterSpacing: 0.3,
+              child: RepaintBoundary(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.sceneTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.display(9, text: widget.sceneTitle)
+                          .copyWith(color: Colors.white),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 5),
+                    Text(
+                      _dateRangeLabel(widget.frames),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.body(5).copyWith(
+                        color: Colors.white.withValues(alpha: 0.4),
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
