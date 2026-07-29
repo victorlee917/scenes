@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_colors.dart';
 import 'app_typography.dart';
@@ -54,6 +55,16 @@ class AppTheme {
         foregroundColor: c.foreground,
         elevation: 0,
         centerTitle: false,
+        // AppBar가 있으면 자체 systemOverlayStyle로 root AnnotatedRegion을
+        // 덮어쓴다. 기본값은 배경색에서 유추한 불투명 상태바라 그라데이션을
+        // 끊으므로, 여기서도 투명 + 테마 밝기에 맞춘 아이콘으로 명시.
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness:
+              brightness == Brightness.dark ? Brightness.light : Brightness.dark,
+          statusBarBrightness:
+              brightness == Brightness.dark ? Brightness.dark : Brightness.light,
+        ),
       ),
       splashFactory: NoSplash.splashFactory,
       splashColor: Colors.transparent,

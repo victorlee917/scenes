@@ -66,7 +66,9 @@ class ConfirmDialog extends StatelessWidget {
       padding: EdgeInsets.only(
         left: 12,
         right: 12,
-        bottom: padding.bottom,
+        // 플로팅 카드라 좌우(12)와 대칭되는 기본 하단 여백을 준다. 안전영역
+        // inset만 쓰면 Android(padding.bottom==0)에서 소프트바에 바로 붙는다.
+        bottom: padding.bottom + 12,
       ),
       child: GlassPanel(
         borderRadius: AppRadii.sheetBorder,
