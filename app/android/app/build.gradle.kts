@@ -35,8 +35,11 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.tapas.scenes"
+        // Play 상 앱 정체성. namespace(com.tapas.scenes, R클래스용)와 의도적으로
+        // 다르다 — com.tapas.scenes는 이전 Play 계정에 등록됐다 삭제돼 영구 예약됐고
+        // (Google Play는 삭제해도 패키지명을 반납하지 않음), 새 계정으로 출시하려면
+        // 재사용 불가하므로 새 applicationId를 쓴다. 이 값도 첫 업로드 후 영구 고정.
+        applicationId = "com.tapas.scenesapp"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

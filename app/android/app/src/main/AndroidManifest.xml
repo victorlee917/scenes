@@ -6,13 +6,19 @@
     <!-- 사진 선택/EXIF: Android 13+는 READ_MEDIA_IMAGES, 12 이하는
          READ_EXTERNAL_STORAGE. ACCESS_MEDIA_LOCATION은 EXIF GPS 좌표 접근용. -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
+    <!-- ⚠️ READ_MEDIA_VISUAL_USER_SELECTED는 일부러 선언하지 않는다. 선언하면
+         photo_manager(3.9.0)가 Android 14+에서 "partial 접근" 모드로 판단해,
+         이 권한이 미허용이면 READ_MEDIA_IMAGES가 full grant여도
+         requestPermissionExtend()가 denied를 반환 → 사진 그리드가 통째로 비어
+         버린다. 선언을 빼면 READ_MEDIA_IMAGES 기준으로 authorized가 나와 정상
+         동작. (부분 접근 UX보다 full-access 정상 동작이 우선) -->
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32"/>
     <uses-permission android:name="android.permission.ACCESS_MEDIA_LOCATION"/>
 
     <application
-        android:label="scenes"
+        android:label="Scenes"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -53,6 +59,12 @@
                     android:host="oauth"/>
             </intent-filter>
         </activity>
+        <!-- image_cropper(UCrop) 크롭 화면. 이 선언이 없으면 아바타/커버 사진
+             크롭 진입 시 ActivityNotFoundException으로 앱이 터진다. -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"/>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
